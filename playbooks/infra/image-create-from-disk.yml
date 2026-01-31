@@ -57,6 +57,7 @@
           --format json
           -- {{ image_name | quote }}
       register: image_create_result
+      changed_when: true
 
     - name: Parse image ID from result
       ansible.builtin.set_fact:

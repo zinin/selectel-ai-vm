@@ -45,7 +45,9 @@
           ---------------------
           {% if sgs.security_groups | length > 0 %}
           {% for rule in sgs.security_groups[0].security_group_rules %}
-          {{ "%-8s" | format(rule.direction) }} | {{ "%-6s" | format(rule.protocol | default('any')) }} | Port: {{ rule.port_range_min | default('*') }}-{{ rule.port_range_max | default('*') }} | {{ rule.remote_ip_prefix | default(rule.remote_group_id | default('any')) }}
+          {{ "%-8s" | format(rule.direction) }} | {{ "%-6s" | format(rule.protocol | default('any')) }}
+            | Port: {{ rule.port_range_min | default('*') }}-{{ rule.port_range_max | default('*') }}
+            | {{ rule.remote_ip_prefix | default(rule.remote_group_id | default('any')) }}
           {% endfor %}
           {% else %}
           Security group not found.

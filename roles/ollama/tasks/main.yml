@@ -6,8 +6,13 @@
   failed_when: false
 
 - name: Download and install Ollama
-  ansible.builtin.shell: curl -fsSL https://ollama.com/install.sh | sh
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://ollama.com/install.sh | sh
+  args:
+    executable: /bin/bash
   when: ollama_check.rc != 0
+  changed_when: true
 
 - name: Create Ollama systemd override directory
   ansible.builtin.file:
@@ -28,9 +33,9 @@
 - name: Ensure Ollama service is enabled and running
   ansible.builtin.systemd:
     name: ollama
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
+    daemon_reload: true
 
 - name: Pull Ollama models
   ansible.builtin.command: ollama pull {{ item }}

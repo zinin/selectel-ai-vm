@@ -1,22 +1,22 @@
 ---
-- name: Create user {{ target_user }}
+- name: Create target user
   ansible.builtin.user:
     name: "{{ target_user }}"
     uid: "{{ user_uid }}"
     groups: "{{ user_groups }}"
-    append: yes
+    append: true
     shell: /bin/bash
-    create_home: yes
+    create_home: true
     state: present
 
-- name: Add {{ target_user }} to sudoers without password
+- name: Add target user to sudoers without password
   ansible.builtin.copy:
     content: "{{ target_user }} ALL=(ALL) NOPASSWD: ALL\n"
     dest: "/etc/sudoers.d/{{ target_user }}"
     mode: '0440'
     validate: 'visudo -cf %s'
 
-- name: Ensure .ssh directory exists for {{ target_user }}
+- name: Ensure .ssh directory exists for target user
   ansible.builtin.file:
     path: "/home/{{ target_user }}/.ssh"
     state: directory
@@ -24,11 +24,11 @@
     group: "{{ target_user }}"
     mode: '0700'
 
-- name: Copy SSH authorized_keys from root to {{ target_user }}
+- name: Copy SSH authorized_keys from root to target user
   ansible.builtin.copy:
     src: /root/.ssh/authorized_keys
     dest: "/home/{{ target_user }}/.ssh/authorized_keys"
-    remote_src: yes
+    remote_src: true
     owner: "{{ target_user }}"
     group: "{{ target_user }}"
     mode: '0600'

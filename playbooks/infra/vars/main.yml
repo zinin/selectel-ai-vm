@@ -1,8 +1,8 @@
 # playbooks/infra/vars/main.yml
 ---
 # VM names (defaults, can be overridden with --name)
-gpu_vm_name: "gpu-vm-{{ ansible_date_time.date | replace('-','') }}-{{ ansible_date_time.time | replace(':','') }}"
-setup_vm_name: "setup-vm-{{ ansible_date_time.date | replace('-','') }}-{{ ansible_date_time.time | replace(':','') }}"
+gpu_vm_name: "gpu-vm-{{ ansible_date_time.date | replace('-', '') }}-{{ ansible_date_time.time | replace(':', '') }}"
+setup_vm_name: "setup-vm-{{ ansible_date_time.date | replace('-', '') }}-{{ ansible_date_time.time | replace(':', '') }}"
 
 # Disk defaults
 default_disk_size: "{{ lookup('env', 'DISK_SIZE_GB') | default(10, true) | int }}"

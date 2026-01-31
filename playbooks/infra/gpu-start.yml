@@ -34,7 +34,7 @@
     # === Генерация имени VM если не задано ===
     - name: Set default VM name with timestamp
       ansible.builtin.set_fact:
-        vm_name: "{{ vm_name | default('gpu-vm-' + ansible_date_time.date | replace('-','') + '-' + ansible_date_time.time | replace(':','')) }}"
+        vm_name: "{{ vm_name | default('gpu-vm-' + ansible_date_time.date | replace('-', '') + '-' + ansible_date_time.time | replace(':', '')) }}"
 
     # === Проверка уникальности имени VM ===
     - name: Check if VM with same name already exists
@@ -54,7 +54,10 @@
 
     - name: Calculate local key fingerprint (MD5 format for OpenStack compatibility)
       ansible.builtin.shell: |
+        set -o pipefail
         ssh-keygen -E md5 -lf {{ ssh_key_file | expanduser | quote }} | awk '{print $2}' | sed 's/^MD5://'
+      args:
+        executable: /bin/bash
       register: local_fingerprint
       changed_when: false
 
@@ -65,7 +68,9 @@
 
     - name: Fail if keypair exists with different fingerprint
       ansible.builtin.fail:
-        msg: "Keypair '{{ ssh_key_name }}' exists with different fingerprint. Cloud: {{ existing_keypair.keypairs[0].fingerprint }}, Local: {{ local_fingerprint.stdout }}"
+        msg: >-
+          Keypair '{{ ssh_key_name }}' exists with different fingerprint.
+          Cloud: {{ existing_keypair.keypairs[0].fingerprint }}, Local: {{ local_fingerprint.stdout }}
       when: >
         existing_keypair.keypairs | length > 0 and
         existing_keypair.keypairs[0].fingerprint != local_fingerprint.stdout
@@ -149,6 +154,7 @@
 
     # Используем block/rescue для отката тома при ошибке создания сервера
     - name: Create volume and server from image
+      when: boot_image_name != ""
       block:
         - name: Create boot volume from image
           openstack.cloud.volume:
@@ -193,12 +199,11 @@
             state: absent
             name: "{{ vm_name }}-boot"
           when: new_volume.volume is defined
-          ignore_errors: true
+          failed_when: false
 
         - name: Fail with original error
           ansible.builtin.fail:
             msg: "Server creation failed: {{ original_error }}. Volume {{ vm_name }}-boot was cleaned up."
-      when: boot_image_name != ""
 
     # === Floating IP ===
     - name: Allocate floating IP
@@ -223,5 +228,6 @@
           Status: {{ server.server.status }}
           Floating IP: {{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else 'not allocated' }}
 
-          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else '<floating_ip>' }}
+          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address
+            if floating_ip is defined and floating_ip.floating_ip is defined else '<floating_ip>' }}
           ========================================

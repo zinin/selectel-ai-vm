@@ -4,8 +4,13 @@
     path: "/home/{{ target_user }}/.local/bin/claude"
   register: claude_check
 
-- name: Install Claude Code for {{ target_user }}
-  ansible.builtin.shell: curl -fsSL https://claude.ai/install.sh | bash
-  become: yes
+- name: Install Claude Code
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://claude.ai/install.sh | bash
+  args:
+    executable: /bin/bash
+  become: true
   become_user: "{{ target_user }}"
   when: not claude_check.stat.exists
+  changed_when: true

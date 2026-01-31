@@ -71,6 +71,7 @@
     - name: Download image (using openstack CLI)
       ansible.builtin.command:
         cmd: "openstack image save --file {{ output_file | quote }} {{ image_info.images[0].id | quote }}"
+      changed_when: true
 
     - name: Get file size
       ansible.builtin.stat:

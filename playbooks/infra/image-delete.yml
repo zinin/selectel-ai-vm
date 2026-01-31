@@ -40,6 +40,7 @@
     - name: Delete image
       openstack.cloud.image:
         state: absent
+        name: "{{ image_name }}"
         id: "{{ image_info.images[0].id }}"
       when: image_info.images | length == 1
 

@@ -52,6 +52,7 @@
     - name: Delete existing image if force is true
       openstack.cloud.image:
         state: absent
+        name: "{{ image_name }}"
         id: "{{ existing_image.images[0].id }}"
       when: existing_image.images | length == 1 and force | bool
 
