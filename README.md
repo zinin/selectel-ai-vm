@@ -194,3 +194,9 @@ Selectel API (OpenStack)
     ├── ollama/          # Установка Ollama
     └── claude_code/     # Установка Claude Code
 ```
+
+## License
+
+Copyright (C) 2026 Alexander Zinin mail@zinin.ru
+
+Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See LICENSE.
