@@ -1,0 +1,31 @@
+# Ansible
+*.retry
+.vault_pass
+
+# Python
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local inventory overrides
+inventory/hosts_local.yml
+
+# IDE - JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE - VSCode
+.vscode/
+
+# IDE - Vim
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

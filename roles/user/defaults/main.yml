@@ -1,0 +1,10 @@
+---
+username: zinin
+user_uid: 1000
+user_groups:
+  - sudo
+  - adm
+  - dip
+  - plugdev
+  - video
+  - render

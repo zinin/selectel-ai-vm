@@ -1,0 +1,8 @@
+---
+- name: Configure Selectel GPU VM
+  hosts: gpu_vms
+  gather_facts: yes
+
+  roles:
+    - base
+    - user
