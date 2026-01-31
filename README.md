@@ -58,3 +58,12 @@ ansible-playbook playbooks/site.yml
 - `username` — имя пользователя (по умолчанию: zinin)
 - `user_uid` — UID (по умолчанию: 1000)
 - `user_groups` — список групп
+
+## Локальный запуск образа Selectel
+
+При запуске скачанного образа Selectel локально (без GPU), нужно отключить сервисы nvidia-cdi-refresh, которые пытаются обнаружить отсутствующее оборудование:
+
+```bash
+systemctl stop nvidia-cdi-refresh.service
+systemctl stop nvidia-cdi-refresh.path
+```
