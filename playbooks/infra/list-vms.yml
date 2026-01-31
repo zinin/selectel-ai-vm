@@ -1,0 +1,24 @@
+# playbooks/infra/list-vms.yml
+---
+- name: List servers
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Get all servers
+      openstack.cloud.server_info:
+      register: servers_result
+
+    - name: Display servers
+      ansible.builtin.debug:
+        msg: |
+
+          Servers:
+          ========
+          {% for srv in servers_result.servers | sort(attribute='name') %}
+          {{ "%-30s" | format(srv.name) }} | Status: {{ "%-10s" | format(srv.status) }} | Flavor: {{ srv.flavor.original_name | default(srv.flavor.id) }} | IPs: {{ srv.addresses | dict2items | map(attribute='value') | flatten | map(attribute='addr') | join(', ') }} | ID: {{ srv.id }}
+          {% endfor %}
+          {% if servers_result.servers | length == 0 %}
+          No servers found.
+          {% endif %}
