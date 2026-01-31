@@ -48,7 +48,9 @@ selectel-ai-vm/
 │       ├── image-create-from-disk.yml
 │       ├── image-download.yml
 │       ├── image-upload.yml
-│       └── image-delete.yml
+│       ├── image-delete.yml
+│       ├── network-setup.yml        # создание сети/подсети/роутера/SG
+│       └── network-info.yml         # информация о сети
 │
 ├── inventory/
 │   ├── hosts.yml                  # Статические хосты
@@ -81,14 +83,16 @@ DISK_TYPE=universal             # universal / fast / basic
 # === Сеть ===
 NETWORK_NAME=net
 SUBNET_CIDR=192.168.0.0/24
+EXTERNAL_NETWORK=external-network    # внешняя сеть для floating IP
+ROUTER_NAME=router
 ALLOCATE_FLOATING_IP=true
 
 # === Опции ===
-PREEMPTIBLE=true                # прерываемый сервер (дешевле)
 SECURITY_GROUP=default
 
 # === SSH ===
 SSH_KEY_FILE=~/.ssh/id_ed25519.pub
+SSH_KEY_NAME=ansible-key            # имя keypair в OpenStack
 ```
 
 ## Команды
@@ -100,6 +104,13 @@ SSH_KEY_FILE=~/.ssh/id_ed25519.pub
 ./selectel.sh list-images          # образы в облаке
 ./selectel.sh list-disks           # диски
 ./selectel.sh list-vms             # серверы
+./selectel.sh network-info         # информация о сети
+```
+
+### Управление сетью
+
+```bash
+./selectel.sh network-setup        # создать сеть, подсеть, роутер и SG (один раз)
 ```
 
 ### Управление VM
@@ -107,15 +118,17 @@ SSH_KEY_FILE=~/.ssh/id_ed25519.pub
 ```bash
 ./selectel.sh gpu-start --disk "my-disk"      # запуск с существующим диском
 ./selectel.sh gpu-start --image "my-image"    # запуск из образа (создаст новый диск)
+./selectel.sh gpu-start --image "my-image" --name "gpu-work-1"  # с кастомным именем
 ./selectel.sh gpu-stop                         # удалить VM (диск остаётся)
+./selectel.sh gpu-stop --name "gpu-work-1"    # удалить конкретную VM
 ./selectel.sh setup-start                      # VM без GPU для первичной настройки
+./selectel.sh setup-start --name "setup-2"    # с кастомным именем
 ```
 
 После создания VM выводится:
 ```
-VM создана: gpu-vm-1
+VM создана: gpu-vm-20260131-143022
 IP: 91.123.45.67
-Root password: xxxxx (сохраните при необходимости)
 ```
 
 ### Управление дисками
@@ -223,6 +236,21 @@ Ansible-модули `openstack.cloud` автоматически получаю
 
 ## Особенности Selectel
 
-- **Прерываемые серверы**: работают до 24 часов, могут быть остановлены системой, значительно дешевле
 - **Приватная сеть + Floating IP**: VM в приватной сети 192.168.0.0/24, доступ извне через публичный IP
-- **Root пароль**: генерируется автоматически при создании VM, изменить нельзя
+- **Root доступ**: Selectel-образы Ubuntu поставляются с включённым root-доступом по SSH
+- **Прерываемые серверы**: TODO — требует изучения Selectel API для корректной реализации (возможно через scheduler_hints или специальные flavors)
+
+## Важные детали реализации
+
+Эти требования выявлены в ходе design review и должны быть учтены при имплементации:
+
+| Требование | Описание |
+|------------|----------|
+| **terminate_volume: false** | При создании VM явно указывать `terminate_volume: false`, чтобы boot-диск не удалялся вместе с сервером |
+| **Валидация входных данных** | Проверять наличие обязательных переменных (`GPU_FLAVOR_ID`, `SETUP_FLAVOR_ID`), единственность найденных ресурсов (диск, образ) |
+| **Размер диска** | Автоматически вычислять `max(DISK_SIZE_GB, image.min_disk)` при создании диска из образа |
+| **Генерация имён VM** | При отсутствии `--name` генерировать уникальные имена с timestamp: `gpu-vm-20260131-143022` |
+| **Floating IP** | Использовать `openstack.cloud.floating_ip` с явным указанием `EXTERNAL_NETWORK` вместо `auto_ip: true` |
+| **SSH keypair** | Перед созданием/обновлением keypair проверять fingerprint существующего ключа |
+| **Ожидание образа** | После создания образа ждать по ID, не по имени (избегать коллизий) |
+| **Ansible-модули** | Использовать `openstack.cloud` модули вместо CLI (`openstack` команд) где возможно |

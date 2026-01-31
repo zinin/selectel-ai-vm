@@ -41,14 +41,16 @@ DISK_TYPE=universal
 # === Сеть ===
 NETWORK_NAME=net
 SUBNET_CIDR=192.168.0.0/24
+EXTERNAL_NETWORK=external-network
+ROUTER_NAME=router
 ALLOCATE_FLOATING_IP=true
 
 # === Опции ===
-PREEMPTIBLE=true
 SECURITY_GROUP=default
 
 # === SSH ===
 SSH_KEY_FILE=~/.ssh/id_ed25519.pub
+SSH_KEY_NAME=ansible-key
 ```
 
 **Step 2: Проверить файл создан**
@@ -96,14 +98,20 @@ Commands:
   list-images           List images in cloud
   list-disks            List volumes/disks
   list-vms              List servers
+  network-info          Show network configuration
+
+  network-setup         Create network, subnet, router and security group (one time)
 
   gpu-start             Start GPU VM
     --disk <name>       Use existing disk
     --image <name>      Create from image
+    --name <name>       VM name (default: gpu-vm-YYYYMMDD-HHMMSS)
 
   gpu-stop              Stop and delete GPU VM (keeps disk)
+    --name <name>       VM name (default: gpu-vm-1)
 
   setup-start           Start VM without GPU (for initial setup)
+    --name <name>       VM name (default: setup-vm-YYYYMMDD-HHMMSS)
 
   disk-delete           Delete a disk
     --name <name>       Disk name
@@ -145,32 +153,66 @@ case "$COMMAND" in
     list-vms)
         ansible-playbook "$SCRIPT_DIR/playbooks/infra/list-vms.yml"
         ;;
+    network-info)
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/network-info.yml"
+        ;;
+    network-setup)
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/network-setup.yml"
+        ;;
     gpu-start)
         DISK_NAME=""
         IMAGE_NAME=""
+        VM_NAME=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --disk) DISK_NAME="$2"; shift 2 ;;
                 --image) IMAGE_NAME="$2"; shift 2 ;;
+                --name) VM_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
+        EXTRA_VARS=""
+        [[ -n "$VM_NAME" ]] && EXTRA_VARS="$EXTRA_VARS -e vm_name=$VM_NAME"
         if [[ -n "$DISK_NAME" ]]; then
             ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-start.yml" \
-                -e "boot_disk_name=$DISK_NAME"
+                -e "boot_disk_name=$DISK_NAME" $EXTRA_VARS
         elif [[ -n "$IMAGE_NAME" ]]; then
             ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-start.yml" \
-                -e "boot_image_name=$IMAGE_NAME"
+                -e "boot_image_name=$IMAGE_NAME" $EXTRA_VARS
         else
             echo "Error: specify --disk or --image"
             exit 1
         fi
         ;;
     gpu-stop)
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-stop.yml"
+        VM_NAME=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --name) VM_NAME="$2"; shift 2 ;;
+                *) echo "Unknown option: $1"; exit 1 ;;
+            esac
+        done
+        if [[ -n "$VM_NAME" ]]; then
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-stop.yml" \
+                -e "vm_name=$VM_NAME"
+        else
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-stop.yml"
+        fi
         ;;
     setup-start)
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml"
+        VM_NAME=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --name) VM_NAME="$2"; shift 2 ;;
+                *) echo "Unknown option: $1"; exit 1 ;;
+            esac
+        done
+        if [[ -n "$VM_NAME" ]]; then
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml" \
+                -e "vm_name=$VM_NAME"
+        else
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml"
+        fi
         ;;
     disk-delete)
         DISK_NAME=""
@@ -273,16 +315,19 @@ git commit -m "feat: add selectel.sh CLI wrapper and .env template"
 ```yaml
 # playbooks/infra/vars/main.yml
 ---
-# VM names
-gpu_vm_name: gpu-vm-1
-setup_vm_name: setup-vm-1
+# VM names (defaults, can be overridden with --name)
+gpu_vm_name: "gpu-vm-{{ ansible_date_time.date | replace('-','') }}-{{ ansible_date_time.time | replace(':','') }}"
+setup_vm_name: "setup-vm-{{ ansible_date_time.date | replace('-','') }}-{{ ansible_date_time.time | replace(':','') }}"
 
 # Disk defaults
-default_disk_size: "{{ lookup('env', 'DISK_SIZE_GB') | default(10, true) }}"
+default_disk_size: "{{ lookup('env', 'DISK_SIZE_GB') | default(10, true) | int }}"
 default_disk_type: "{{ lookup('env', 'DISK_TYPE') | default('universal', true) }}"
 
 # Network
 network_name: "{{ lookup('env', 'NETWORK_NAME') | default('net', true) }}"
+subnet_cidr: "{{ lookup('env', 'SUBNET_CIDR') | default('192.168.0.0/24', true) }}"
+external_network: "{{ lookup('env', 'EXTERNAL_NETWORK') | default('external-network', true) }}"
+router_name: "{{ lookup('env', 'ROUTER_NAME') | default('router', true) }}"
 allocate_floating_ip: "{{ lookup('env', 'ALLOCATE_FLOATING_IP') | default('true', true) | bool }}"
 security_group: "{{ lookup('env', 'SECURITY_GROUP') | default('default', true) }}"
 
@@ -290,11 +335,9 @@ security_group: "{{ lookup('env', 'SECURITY_GROUP') | default('default', true) }
 gpu_flavor_id: "{{ lookup('env', 'GPU_FLAVOR_ID') }}"
 setup_flavor_id: "{{ lookup('env', 'SETUP_FLAVOR_ID') }}"
 
-# Preemptible
-preemptible: "{{ lookup('env', 'PREEMPTIBLE') | default('true', true) | bool }}"
-
 # SSH key
 ssh_key_file: "{{ lookup('env', 'SSH_KEY_FILE') | default('~/.ssh/id_ed25519.pub', true) }}"
+ssh_key_name: "{{ lookup('env', 'SSH_KEY_NAME') | default('ansible-key', true) }}"
 
 # Region
 availability_zone: "{{ lookup('env', 'OS_AVAILABILITY_ZONE') | default('ru-7a', true) }}"
@@ -498,7 +541,154 @@ git commit -m "feat: add list-vms playbook"
 
 ---
 
-## Task 7: Реализовать gpu-start playbook
+## Task 7: Реализовать network-setup и network-info playbooks
+
+**Files:**
+- Create: `playbooks/infra/network-setup.yml`
+- Create: `playbooks/infra/network-info.yml`
+
+**Step 1: Создать playbook для настройки сети**
+
+```yaml
+# playbooks/infra/network-setup.yml
+---
+- name: Setup network infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Create network
+      openstack.cloud.network:
+        state: present
+        name: "{{ network_name }}"
+      register: network
+
+    - name: Create subnet
+      openstack.cloud.subnet:
+        state: present
+        name: "{{ network_name }}-subnet"
+        network_name: "{{ network_name }}"
+        cidr: "{{ subnet_cidr }}"
+        dns_nameservers:
+          - 8.8.8.8
+          - 8.8.4.4
+      register: subnet
+
+    - name: Create router
+      openstack.cloud.router:
+        state: present
+        name: "{{ router_name }}"
+        network: "{{ external_network }}"
+        interfaces:
+          - "{{ network_name }}-subnet"
+      register: router
+
+    - name: Create security group
+      openstack.cloud.security_group:
+        state: present
+        name: "{{ security_group }}"
+        description: "Security group for Ansible-managed VMs"
+      register: sg
+      when: security_group != 'default'
+
+    - name: Add SSH rule to security group
+      openstack.cloud.security_group_rule:
+        state: present
+        security_group: "{{ security_group }}"
+        protocol: tcp
+        port_range_min: 22
+        port_range_max: 22
+        remote_ip_prefix: 0.0.0.0/0
+      when: security_group != 'default'
+
+    - name: Add ICMP rule to security group
+      openstack.cloud.security_group_rule:
+        state: present
+        security_group: "{{ security_group }}"
+        protocol: icmp
+        remote_ip_prefix: 0.0.0.0/0
+      when: security_group != 'default'
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Network Infrastructure Created!
+          ========================================
+          Network: {{ network.network.name }} ({{ network.network.id }})
+          Subnet: {{ subnet.subnet.name }} ({{ subnet.subnet.cidr }})
+          Router: {{ router.router.name }} ({{ router.router.id }})
+          Security Group: {{ security_group }}
+          ========================================
+```
+
+**Step 2: Создать playbook для просмотра сети**
+
+```yaml
+# playbooks/infra/network-info.yml
+---
+- name: Show network information
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Get network info
+      openstack.cloud.networks_info:
+        name: "{{ network_name }}"
+      register: networks
+
+    - name: Get subnet info
+      openstack.cloud.subnets_info:
+        name: "{{ network_name }}-subnet"
+      register: subnets
+
+    - name: Get router info
+      openstack.cloud.routers_info:
+        name: "{{ router_name }}"
+      register: routers
+
+    - name: Get security group info
+      openstack.cloud.security_group_info:
+        name: "{{ security_group }}"
+      register: sgs
+
+    - name: Display network info
+      ansible.builtin.debug:
+        msg: |
+
+          Network Configuration:
+          ======================
+          Network: {{ networks.networks[0].name if networks.networks | length > 0 else 'NOT FOUND' }}
+          Subnet: {{ subnets.subnets[0].cidr if subnets.subnets | length > 0 else 'NOT FOUND' }}
+          Router: {{ routers.routers[0].name if routers.routers | length > 0 else 'NOT FOUND' }}
+          Security Group: {{ sgs.security_groups[0].name if sgs.security_groups | length > 0 else 'NOT FOUND' }}
+          External Network: {{ external_network }}
+```
+
+**Step 3: Проверить синтаксис playbooks**
+
+Run: `ansible-playbook playbooks/infra/network-setup.yml --syntax-check && ansible-playbook playbooks/infra/network-info.yml --syntax-check`
+Expected: Оба playbook без ошибок
+
+**Step 4: Commit**
+
+```bash
+git add playbooks/infra/network-setup.yml playbooks/infra/network-info.yml
+git commit -m "feat: add network-setup and network-info playbooks"
+```
+
+---
+
+## Task 8: Реализовать gpu-start playbook
 
 **Files:**
 - Create: `playbooks/infra/gpu-start.yml`
@@ -511,7 +701,7 @@ git commit -m "feat: add list-vms playbook"
 - name: Start GPU VM
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true  # Нужно для ansible_date_time
 
   vars_files:
     - vars/main.yml
@@ -519,15 +709,27 @@ git commit -m "feat: add list-vms playbook"
   vars:
     boot_disk_name: ""
     boot_image_name: ""
-    vm_name: "{{ gpu_vm_name }}"
+    # vm_name может быть переопределён через -e, иначе генерируется с timestamp
     flavor_id: "{{ gpu_flavor_id }}"
 
   tasks:
-    - name: Validate input
+    # === Валидация входных данных ===
+    - name: Validate boot source
       ansible.builtin.fail:
         msg: "Specify either boot_disk_name or boot_image_name"
       when: boot_disk_name == "" and boot_image_name == ""
 
+    - name: Validate GPU_FLAVOR_ID is set
+      ansible.builtin.fail:
+        msg: "GPU_FLAVOR_ID must be set in .env"
+      when: flavor_id == ""
+
+    # === Генерация имени VM если не задано ===
+    - name: Set default VM name with timestamp
+      ansible.builtin.set_fact:
+        vm_name: "{{ vm_name | default('gpu-vm-' + ansible_date_time.date | replace('-','') + '-' + ansible_date_time.time | replace(':','')) }}"
+
+    # === SSH keypair ===
     - name: Read SSH public key
       ansible.builtin.set_fact:
         ssh_public_key: "{{ lookup('file', ssh_key_file | expanduser) }}"
@@ -535,15 +737,20 @@ git commit -m "feat: add list-vms playbook"
     - name: Ensure keypair exists
       openstack.cloud.keypair:
         state: present
-        name: ansible-key
+        name: "{{ ssh_key_name }}"
         public_key: "{{ ssh_public_key }}"
 
-    # Boot from existing disk
+    # === Boot from existing disk ===
     - name: Get existing disk info
       openstack.cloud.volume_info:
         name: "{{ boot_disk_name }}"
       register: disk_info
       when: boot_disk_name != ""
+
+    - name: Validate exactly one disk found
+      ansible.builtin.fail:
+        msg: "Expected exactly 1 disk named '{{ boot_disk_name }}', found {{ disk_info.volumes | length }}"
+      when: boot_disk_name != "" and disk_info.volumes | length != 1
 
     - name: Create server from existing disk
       openstack.cloud.server:
@@ -551,37 +758,46 @@ git commit -m "feat: add list-vms playbook"
         name: "{{ vm_name }}"
         flavor: "{{ flavor_id }}"
         boot_volume: "{{ disk_info.volumes[0].id }}"
-        key_name: ansible-key
+        terminate_volume: false
+        key_name: "{{ ssh_key_name }}"
         security_groups:
           - "{{ security_group }}"
         network: "{{ network_name }}"
         availability_zone: "{{ availability_zone }}"
-        auto_ip: "{{ allocate_floating_ip }}"
+        auto_ip: false
         timeout: 600
         wait: true
-        meta:
-          preemptible: "{{ preemptible | string }}"
       register: server_disk
-      when: boot_disk_name != "" and disk_info.volumes | length > 0
+      when: boot_disk_name != ""
 
-    # Boot from image (create new disk)
+    # === Boot from image (create new disk) ===
     - name: Get image info
       openstack.cloud.image_info:
-        name: "{{ boot_image_name }}"
+        image: "{{ boot_image_name }}"
       register: image_info
+      when: boot_image_name != ""
+
+    - name: Validate exactly one image found
+      ansible.builtin.fail:
+        msg: "Expected exactly 1 image named '{{ boot_image_name }}', found {{ image_info.images | length }}"
+      when: boot_image_name != "" and image_info.images | length != 1
+
+    - name: Calculate disk size (max of default and image min_disk)
+      ansible.builtin.set_fact:
+        actual_disk_size: "{{ [default_disk_size | int, image_info.images[0].min_disk | default(0) | int] | max }}"
       when: boot_image_name != ""
 
     - name: Create boot volume from image
       openstack.cloud.volume:
         state: present
         name: "{{ vm_name }}-boot"
-        size: "{{ default_disk_size }}"
+        size: "{{ actual_disk_size }}"
         volume_type: "{{ default_disk_type }}"
         image: "{{ image_info.images[0].id }}"
         availability_zone: "{{ availability_zone }}"
         wait: true
       register: new_volume
-      when: boot_image_name != "" and image_info.images | length > 0
+      when: boot_image_name != ""
 
     - name: Create server from new volume
       openstack.cloud.server:
@@ -589,23 +805,33 @@ git commit -m "feat: add list-vms playbook"
         name: "{{ vm_name }}"
         flavor: "{{ flavor_id }}"
         boot_volume: "{{ new_volume.volume.id }}"
-        key_name: ansible-key
+        terminate_volume: false
+        key_name: "{{ ssh_key_name }}"
         security_groups:
           - "{{ security_group }}"
         network: "{{ network_name }}"
         availability_zone: "{{ availability_zone }}"
-        auto_ip: "{{ allocate_floating_ip }}"
+        auto_ip: false
         timeout: 600
         wait: true
-        meta:
-          preemptible: "{{ preemptible | string }}"
       register: server_image
-      when: boot_image_name != "" and new_volume.volume is defined
+      when: boot_image_name != ""
 
+    # === Floating IP ===
     - name: Set server result
       ansible.builtin.set_fact:
-        server: "{{ server_disk if server_disk is defined and server_disk.server is defined else server_image }}"
+        server: "{{ server_disk if server_disk.server is defined else server_image }}"
 
+    - name: Allocate floating IP
+      openstack.cloud.floating_ip:
+        state: present
+        server: "{{ server.server.id }}"
+        network: "{{ external_network }}"
+        wait: true
+      register: floating_ip
+      when: allocate_floating_ip | bool
+
+    # === Результат ===
     - name: Display server info
       ansible.builtin.debug:
         msg: |
@@ -616,11 +842,10 @@ git commit -m "feat: add list-vms playbook"
           Name: {{ server.server.name }}
           ID: {{ server.server.id }}
           Status: {{ server.server.status }}
-          IPs: {{ server.server.addresses | dict2items | map(attribute='value') | flatten | map(attribute='addr') | join(', ') }}
+          Floating IP: {{ floating_ip.floating_ip.floating_ip_address | default('not allocated') }}
 
-          Connect: ssh root@<floating_ip>
+          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address | default('<floating_ip>') }}
           ========================================
-      when: server.server is defined
 ```
 
 **Step 2: Проверить синтаксис playbook**
@@ -637,7 +862,7 @@ git commit -m "feat: add gpu-start playbook"
 
 ---
 
-## Task 8: Реализовать gpu-stop playbook
+## Task 9: Реализовать gpu-stop playbook
 
 **Files:**
 - Create: `playbooks/infra/gpu-stop.yml`
@@ -656,12 +881,18 @@ git commit -m "feat: add gpu-start playbook"
     - vars/main.yml
 
   vars:
-    vm_name: "{{ gpu_vm_name }}"
+    # vm_name передаётся через -e или используется default
+    vm_name: ""
 
   tasks:
+    - name: Validate vm_name is provided
+      ansible.builtin.fail:
+        msg: "vm_name is required. Use --name <vm_name> or set default in vars"
+      when: vm_name == ""
+
     - name: Get server info
       openstack.cloud.server_info:
-        name: "{{ vm_name }}"
+        server: "{{ vm_name }}"
       register: server_info
 
     - name: Display warning if no server found
@@ -669,11 +900,19 @@ git commit -m "feat: add gpu-start playbook"
         msg: "No server named '{{ vm_name }}' found. Nothing to delete."
       when: server_info.servers | length == 0
 
-    - name: Delete server (keeps attached volumes)
+    - name: Release floating IP
+      openstack.cloud.floating_ip:
+        state: absent
+        server: "{{ server_info.servers[0].id }}"
+        floating_ip_address: "{{ item }}"
+      loop: "{{ server_info.servers[0].addresses | dict2items | map(attribute='value') | flatten | selectattr('OS-EXT-IPS:type', 'equalto', 'floating') | map(attribute='addr') | list }}"
+      when: server_info.servers | length > 0
+      ignore_errors: true
+
+    - name: Delete server (keeps attached volumes due to terminate_volume: false at creation)
       openstack.cloud.server:
         state: absent
         name: "{{ vm_name }}"
-        delete_fip: true
         wait: true
         timeout: 300
       when: server_info.servers | length > 0
@@ -686,7 +925,8 @@ git commit -m "feat: add gpu-start playbook"
           GPU VM Deleted Successfully!
           ========================================
           Name: {{ vm_name }}
-          Note: Boot disk is preserved. Use 'disk-delete' to remove it.
+          Note: Boot disk is preserved (terminate_volume: false).
+                Use 'disk-delete --name <disk>' to remove it.
           ========================================
       when: server_info.servers | length > 0
 ```
@@ -705,7 +945,7 @@ git commit -m "feat: add gpu-stop playbook"
 
 ---
 
-## Task 9: Реализовать setup-start playbook
+## Task 10: Реализовать setup-start playbook
 
 **Files:**
 - Create: `playbooks/infra/setup-start.yml`
@@ -718,22 +958,29 @@ git commit -m "feat: add gpu-stop playbook"
 - name: Start setup VM (without GPU, for initial configuration)
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true  # Нужно для ansible_date_time
 
   vars_files:
     - vars/main.yml
 
   vars:
-    vm_name: "{{ setup_vm_name }}"
+    # vm_name может быть переопределён через -e
     flavor_id: "{{ setup_flavor_id }}"
     base_image: "Ubuntu 24.04 LTS 64-bit"
 
   tasks:
+    # === Валидация ===
     - name: Validate flavor is set
       ansible.builtin.fail:
         msg: "SETUP_FLAVOR_ID must be set in .env"
       when: flavor_id == ""
 
+    # === Генерация имени VM если не задано ===
+    - name: Set default VM name with timestamp
+      ansible.builtin.set_fact:
+        vm_name: "{{ vm_name | default('setup-vm-' + ansible_date_time.date | replace('-','') + '-' + ansible_date_time.time | replace(':','')) }}"
+
+    # === SSH keypair ===
     - name: Read SSH public key
       ansible.builtin.set_fact:
         ssh_public_key: "{{ lookup('file', ssh_key_file | expanduser) }}"
@@ -741,46 +988,65 @@ git commit -m "feat: add gpu-stop playbook"
     - name: Ensure keypair exists
       openstack.cloud.keypair:
         state: present
-        name: ansible-key
+        name: "{{ ssh_key_name }}"
         public_key: "{{ ssh_public_key }}"
 
+    # === Image ===
     - name: Get base image info
       openstack.cloud.image_info:
-        name: "{{ base_image }}"
+        image: "{{ base_image }}"
       register: image_info
 
-    - name: Fail if image not found
+    - name: Validate exactly one image found
       ansible.builtin.fail:
-        msg: "Base image '{{ base_image }}' not found"
-      when: image_info.images | length == 0
+        msg: "Expected exactly 1 image named '{{ base_image }}', found {{ image_info.images | length }}"
+      when: image_info.images | length != 1
+
+    # === Disk ===
+    - name: Calculate disk size (max of default and image min_disk)
+      ansible.builtin.set_fact:
+        actual_disk_size: "{{ [default_disk_size | int, image_info.images[0].min_disk | default(0) | int] | max }}"
 
     - name: Create boot volume
       openstack.cloud.volume:
         state: present
         name: "{{ vm_name }}-boot"
-        size: "{{ default_disk_size }}"
+        size: "{{ actual_disk_size }}"
         volume_type: "{{ default_disk_type }}"
         image: "{{ image_info.images[0].id }}"
         availability_zone: "{{ availability_zone }}"
         wait: true
       register: boot_volume
 
+    # === Server ===
     - name: Create setup server
       openstack.cloud.server:
         state: present
         name: "{{ vm_name }}"
         flavor: "{{ flavor_id }}"
         boot_volume: "{{ boot_volume.volume.id }}"
-        key_name: ansible-key
+        terminate_volume: false
+        key_name: "{{ ssh_key_name }}"
         security_groups:
           - "{{ security_group }}"
         network: "{{ network_name }}"
         availability_zone: "{{ availability_zone }}"
-        auto_ip: "{{ allocate_floating_ip }}"
+        auto_ip: false
         timeout: 600
         wait: true
       register: server
 
+    # === Floating IP ===
+    - name: Allocate floating IP
+      openstack.cloud.floating_ip:
+        state: present
+        server: "{{ server.server.id }}"
+        network: "{{ external_network }}"
+        wait: true
+      register: floating_ip
+      when: allocate_floating_ip | bool
+
+    # === Результат ===
     - name: Display server info
       ansible.builtin.debug:
         msg: |
@@ -791,12 +1057,14 @@ git commit -m "feat: add gpu-stop playbook"
           Name: {{ server.server.name }}
           ID: {{ server.server.id }}
           Status: {{ server.server.status }}
-          IPs: {{ server.server.addresses | dict2items | map(attribute='value') | flatten | map(attribute='addr') | join(', ') }}
+          Floating IP: {{ floating_ip.floating_ip.floating_ip_address | default('not allocated') }}
 
           Next steps:
           1. Add IP to inventory/hosts.yml
           2. Run: ansible-playbook playbooks/site.yml
           3. Create image: ./selectel.sh image-create-from-disk --disk "{{ vm_name }}-boot" --name "base-image"
+
+          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address | default('<floating_ip>') }}
           ========================================
 ```
 
@@ -814,7 +1082,7 @@ git commit -m "feat: add setup-start playbook"
 
 ---
 
-## Task 10: Реализовать disk-delete playbook
+## Task 11: Реализовать disk-delete playbook
 
 **Files:**
 - Create: `playbooks/infra/disk-delete.yml`
@@ -886,12 +1154,14 @@ git commit -m "feat: add disk-delete playbook"
 
 ---
 
-## Task 11: Реализовать image-create-from-disk playbook
+## Task 12: Реализовать image-create-from-disk playbook
 
 **Files:**
 - Create: `playbooks/infra/image-create-from-disk.yml`
 
 **Step 1: Создать playbook для создания образа из диска**
+
+> **Примечание**: К сожалению, `openstack.cloud` collection не имеет модуля для создания образа из volume напрямую. Используем `openstack.cloud.image` для upload, но для volume→image нужен CLI. Однако мы можем минимизировать использование CLI и ждать по ID.
 
 ```yaml
 # playbooks/infra/image-create-from-disk.yml
@@ -906,44 +1176,64 @@ git commit -m "feat: add disk-delete playbook"
     image_name: ""
 
   tasks:
+    # === Валидация ===
     - name: Validate input
       ansible.builtin.fail:
         msg: "source_disk_name and image_name are required"
       when: source_disk_name == "" or image_name == ""
 
+    - name: Check if image with this name already exists
+      openstack.cloud.image_info:
+        image: "{{ image_name }}"
+      register: existing_image
+
+    - name: Fail if image already exists
+      ansible.builtin.fail:
+        msg: "Image '{{ image_name }}' already exists. Choose a different name or delete the existing image."
+      when: existing_image.images | length > 0
+
+    # === Volume info ===
     - name: Get volume info
       openstack.cloud.volume_info:
         name: "{{ source_disk_name }}"
       register: volume_info
 
-    - name: Fail if volume not found
+    - name: Validate exactly one volume found
       ansible.builtin.fail:
-        msg: "Volume '{{ source_disk_name }}' not found"
-      when: volume_info.volumes | length == 0
+        msg: "Expected exactly 1 volume named '{{ source_disk_name }}', found {{ volume_info.volumes | length }}"
+      when: volume_info.volumes | length != 1
 
     - name: Check if volume is attached
       ansible.builtin.fail:
         msg: "Volume '{{ source_disk_name }}' is attached to a server. Stop the server first."
       when: volume_info.volumes[0].attachments | length > 0
 
-    - name: Create image from volume (using openstack CLI)
+    # === Create image (CLI required for volume→image) ===
+    - name: Create image from volume
       ansible.builtin.command:
         cmd: >
           openstack image create
           --volume {{ volume_info.volumes[0].id }}
           --disk-format raw
           --container-format bare
+          --format json
           {{ image_name }}
       register: image_create_result
 
-    - name: Wait for image to become active
+    - name: Parse image ID from result
+      ansible.builtin.set_fact:
+        created_image_id: "{{ (image_create_result.stdout | from_json).id }}"
+
+    # === Wait by ID (not by name) ===
+    - name: Wait for image to become active (by ID)
       openstack.cloud.image_info:
-        name: "{{ image_name }}"
+        image: "{{ created_image_id }}"
       register: image_info
       until: image_info.images | length > 0 and image_info.images[0].status == 'active'
       retries: 60
       delay: 10
 
+    # === Результат ===
     - name: Display result
       ansible.builtin.debug:
         msg: |
@@ -952,7 +1242,7 @@ git commit -m "feat: add disk-delete playbook"
           Image Created Successfully!
           ========================================
           Name: {{ image_name }}
-          ID: {{ image_info.images[0].id }}
+          ID: {{ created_image_id }}
           Status: {{ image_info.images[0].status }}
           Size: {{ image_info.images[0].size | default(0) }} bytes
 
@@ -974,7 +1264,7 @@ git commit -m "feat: add image-create-from-disk playbook"
 
 ---
 
-## Task 12: Реализовать image-download playbook
+## Task 13: Реализовать image-download playbook
 
 **Files:**
 - Create: `playbooks/infra/image-download.yml`
@@ -1055,7 +1345,7 @@ git commit -m "feat: add image-download playbook"
 
 ---
 
-## Task 13: Реализовать image-upload playbook
+## Task 14: Реализовать image-upload playbook
 
 **Files:**
 - Create: `playbooks/infra/image-upload.yml`
@@ -1133,7 +1423,7 @@ git commit -m "feat: add image-upload playbook"
 
 ---
 
-## Task 14: Реализовать image-delete playbook
+## Task 15: Реализовать image-delete playbook
 
 **Files:**
 - Create: `playbooks/infra/image-delete.yml`
@@ -1199,7 +1489,7 @@ git commit -m "feat: add image-delete playbook"
 
 ---
 
-## Task 15: Обновить README.md с документацией
+## Task 16: Обновить README.md с документацией
 
 **Files:**
 - Modify: `README.md`
@@ -1233,12 +1523,18 @@ git commit -m "feat: add image-delete playbook"
 ./selectel.sh list-images     # Images in cloud
 ./selectel.sh list-disks      # Volumes/disks
 ./selectel.sh list-vms        # Running servers
+./selectel.sh network-info    # Network configuration
+
+# Network setup (one time)
+./selectel.sh network-setup   # Create network, subnet, router, security group
 
 # VM Management
-./selectel.sh gpu-start --disk "my-disk"     # Start GPU VM with existing disk
-./selectel.sh gpu-start --image "my-image"   # Start GPU VM from image
-./selectel.sh gpu-stop                        # Stop GPU VM (keeps disk)
-./selectel.sh setup-start                     # Start VM without GPU (initial setup)
+./selectel.sh gpu-start --disk "my-disk"                    # Start GPU VM with existing disk
+./selectel.sh gpu-start --image "my-image"                  # Start GPU VM from image
+./selectel.sh gpu-start --image "my-image" --name "my-vm"   # With custom VM name
+./selectel.sh gpu-stop --name "my-vm"                       # Stop specific GPU VM (keeps disk)
+./selectel.sh setup-start                                    # Start VM without GPU
+./selectel.sh setup-start --name "my-setup"                 # With custom VM name
 
 # Disk Management
 ./selectel.sh disk-delete --name "my-disk"
@@ -1285,7 +1581,7 @@ git commit -m "docs: add infrastructure management documentation"
 
 ---
 
-## Task 16: Финальная проверка синтаксиса всех playbooks
+## Task 17: Финальная проверка синтаксиса всех playbooks
 
 **Files:**
 - All playbooks in `playbooks/infra/`
@@ -1323,17 +1619,35 @@ git commit -m "chore: final cleanup"
 После выполнения всех задач будет создана полная инфраструктура:
 
 - **selectel.sh** - CLI обёртка для управления инфраструктурой
-- **.env.example** - шаблон конфигурации
-- **playbooks/infra/** - 12 Ansible playbooks:
+- **.env.example** - шаблон конфигурации (с EXTERNAL_NETWORK, ROUTER_NAME, SSH_KEY_NAME)
+- **playbooks/infra/** - 14 Ansible playbooks:
   - `list-flavors.yml` - список конфигураций VM
   - `list-images.yml` - список образов
   - `list-disks.yml` - список дисков
   - `list-vms.yml` - список серверов
-  - `gpu-start.yml` - запуск GPU VM
-  - `gpu-stop.yml` - остановка GPU VM
+  - `network-setup.yml` - создание сети, подсети, роутера и SG
+  - `network-info.yml` - информация о сети
+  - `gpu-start.yml` - запуск GPU VM (с валидацией, terminate_volume: false, floating IP)
+  - `gpu-stop.yml` - остановка GPU VM (поддержка --name)
   - `setup-start.yml` - запуск VM без GPU для настройки
   - `disk-delete.yml` - удаление диска
-  - `image-create-from-disk.yml` - создание образа
+  - `image-create-from-disk.yml` - создание образа (ожидание по ID)
   - `image-download.yml` - скачивание образа
   - `image-upload.yml` - загрузка образа
   - `image-delete.yml` - удаление образа
+
+## Изменения по результатам review
+
+Учтены следующие замечания из design review:
+
+| Замечание | Изменение |
+|-----------|-----------|
+| ARCH-1 | Добавлены playbooks network-setup, network-info |
+| IMPL-2 | Поддержка --name, генерация уникальных имён VM |
+| IMPL-4 | terminate_volume: false при создании серверов |
+| ERR-1 | Валидация входных переменных и ресурсов |
+| EDGE-1 | Автоматический расчёт disk_size = max(default, image.min_disk) |
+| IMPL-3 | Где возможно — модули вместо CLI |
+| ERR-2 | Ожидание образа по ID |
+| SEC-1 | Конфигурируемый SSH_KEY_NAME |
+| EDGE-2 | Явный EXTERNAL_NETWORK для floating IP |
