@@ -1,0 +1,59 @@
+# playbooks/infra/disk-delete.yml
+---
+- name: Delete a volume/disk
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    disk_name: ""
+
+  tasks:
+    - name: Validate input
+      ansible.builtin.fail:
+        msg: "disk_name is required"
+      when: disk_name == ""
+
+    - name: Get volume info
+      openstack.cloud.volume_info:
+        name: "{{ disk_name }}"
+        details: true
+      register: volume_info
+
+    - name: Display warning if not found
+      ansible.builtin.debug:
+        msg: "Volume '{{ disk_name }}' not found. Nothing to delete."
+      when: volume_info.volumes | length == 0
+
+    - name: Validate exactly one volume found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 volume named '{{ disk_name }}', found {{ volume_info.volumes | length }}:
+          {% for vol in volume_info.volumes %}
+          - {{ vol.name }} (ID: {{ vol.id }}, Size: {{ vol.size }}GB)
+          {% endfor %}
+          Use volume ID directly or use unique names.
+      when: volume_info.volumes | length > 1
+
+    - name: Check if volume is attached
+      ansible.builtin.fail:
+        msg: "Volume '{{ disk_name }}' is attached to a server. Detach or delete the server first."
+      when: volume_info.volumes | length > 0 and volume_info.volumes[0].attachments | length > 0
+
+    - name: Delete volume
+      openstack.cloud.volume:
+        state: absent
+        name: "{{ disk_name }}"
+        wait: true
+      when: volume_info.volumes | length > 0
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Volume Deleted Successfully!
+          ========================================
+          Name: {{ disk_name }}
+          ========================================
+      when: volume_info.volumes | length > 0
