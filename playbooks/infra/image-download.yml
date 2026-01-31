@@ -1,0 +1,90 @@
+# playbooks/infra/image-download.yml
+---
+- name: Download image locally
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  vars:
+    image_name: ""
+    output_dir: ""
+    force: false  # Требовать --force для перезаписи
+
+  tasks:
+    - name: Validate input
+      ansible.builtin.fail:
+        msg: "image_name and output_dir are required"
+      when: image_name == "" or output_dir == ""
+
+    - name: Get image info
+      openstack.cloud.image_info:
+        image: "{{ image_name }}"
+      register: image_info
+
+    - name: Fail if image not found
+      ansible.builtin.fail:
+        msg: "Image '{{ image_name }}' not found"
+      when: image_info.images | length == 0
+
+    - name: Validate exactly one image found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 image named '{{ image_name }}', found {{ image_info.images | length }}:
+          {% for img in image_info.images %}
+          - {{ img.name }} (ID: {{ img.id }})
+          {% endfor %}
+          Use image ID directly or use unique names.
+      when: image_info.images | length > 1
+
+    - name: Wait for image to become active
+      openstack.cloud.image_info:
+        image: "{{ image_info.images[0].id }}"
+      register: image_status
+      until: image_status.images | length > 0 and image_status.images[0].status == 'active'
+      retries: 60
+      delay: 10
+      when: image_info.images[0].status != 'active'
+
+    - name: Ensure output directory exists
+      ansible.builtin.file:
+        path: "{{ output_dir | expanduser }}"
+        state: directory
+        mode: '0755'
+
+    - name: Set output filename
+      ansible.builtin.set_fact:
+        output_file: "{{ output_dir | expanduser }}/{{ image_name }}.raw"
+
+    - name: Check if output file already exists
+      ansible.builtin.stat:
+        path: "{{ output_file }}"
+      register: existing_file
+
+    - name: Fail if file exists and force is false
+      ansible.builtin.fail:
+        msg: "File '{{ output_file }}' already exists. Use --force to overwrite."
+      when: existing_file.stat.exists and not force | bool
+
+    - name: Download image (using openstack CLI)
+      ansible.builtin.command:
+        cmd: "openstack image save --file {{ output_file | quote }} {{ image_info.images[0].id }}"
+
+    - name: Get file size
+      ansible.builtin.stat:
+        path: "{{ output_file }}"
+      register: file_stat
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Image Downloaded Successfully!
+          ========================================
+          Name: {{ image_name }}
+          File: {{ output_file }}
+          Size: {{ (file_stat.stat.size / 1024 / 1024 / 1024) | round(2) }} GB
+          ========================================
