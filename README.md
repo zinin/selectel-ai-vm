@@ -16,7 +16,7 @@
 
 ## Требования
 
-- Ubuntu/Debian или macOS
+- Windows (WSL), Ubuntu/Debian или macOS
 - Ansible 2.9+
 - Python 3.8+
 - SSH ключ для доступа к VM
@@ -26,6 +26,10 @@
 1. Установите зависимости:
 
 ```bash
+# Windows (через WSL)
+wsl --install -d Ubuntu
+# После перезагрузки и настройки WSL — используйте команды для Ubuntu
+
 # Ubuntu/Debian
 sudo apt install python3-openstacksdk python3-openstackclient jq ansible
 
