@@ -3,7 +3,7 @@
   ansible.builtin.command: ollama --version
   register: ollama_check
   changed_when: false
-  failed_when: false
+  ignore_errors: true
 
 - name: Download and install Ollama
   ansible.builtin.shell: curl -fsSL https://ollama.com/install.sh | sh
@@ -31,3 +31,9 @@
     enabled: yes
     state: started
     daemon_reload: yes
+
+- name: Pull Ollama models
+  ansible.builtin.command: ollama pull {{ item }}
+  loop: "{{ ollama_models }}"
+  register: ollama_pull_result
+  changed_when: "'pulling' in ollama_pull_result.stdout"
