@@ -1,0 +1,37 @@
+# playbooks/infra/list-volume-types.yml
+---
+- name: List available volume types
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    os_region: "{{ lookup('env', 'OS_REGION_NAME') | default('ru-7', true) }}"
+    os_project_id: "{{ lookup('env', 'OS_PROJECT_ID') }}"
+
+  tasks:
+    - name: Get auth token
+      openstack.cloud.auth:
+      register: auth_result
+
+    - name: Get volume types via API
+      ansible.builtin.uri:
+        url: "https://{{ os_region }}.cloud.api.selcloud.ru/volume/v3/{{ os_project_id }}/types"
+        method: GET
+        headers:
+          X-Auth-Token: "{{ auth_result.auth_token }}"
+        return_content: true
+      register: volume_types_result
+
+    - name: Display volume types
+      ansible.builtin.debug:
+        msg: |
+
+          Available Volume Types:
+          =======================
+          {% for vt in volume_types_result.json.volume_types | sort(attribute='name') %}
+          {{ "%-30s" | format(vt.name) }} | ID: {{ vt.id }}
+          {% endfor %}
+          {% if volume_types_result.json.volume_types | length == 0 %}
+          No volume types found.
+          {% endif %}

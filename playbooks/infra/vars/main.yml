@@ -6,7 +6,10 @@ setup_vm_name: "setup-vm-{{ ansible_date_time.date | replace('-', '') }}-{{ ansi
 
 # Disk defaults
 default_disk_size: "{{ lookup('env', 'DISK_SIZE_GB') | default(10, true) | int }}"
-default_disk_type: "{{ lookup('env', 'DISK_TYPE') | default('universal', true) }}"
+# DISK_TYPE can be short (universal) or full (universal.ru-7a)
+# If short, append availability zone
+_disk_type_raw: "{{ lookup('env', 'DISK_TYPE') | default('universal', true) }}"
+default_disk_type: "{{ _disk_type_raw if '.' in _disk_type_raw else _disk_type_raw + '.' + availability_zone }}"
 
 # Network
 network_name: "{{ lookup('env', 'NETWORK_NAME') | default('net', true) }}"

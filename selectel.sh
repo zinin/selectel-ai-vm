@@ -52,6 +52,7 @@ Commands:
   list-flavors          List available compute flavors
   list-images           List images in cloud
   list-disks            List volumes/disks
+  list-volume-types     List available volume types
   list-vms              List servers
   network-info          Show network configuration
 
@@ -107,6 +108,9 @@ case "$COMMAND" in
         ;;
     list-disks)
         ansible-playbook "$SCRIPT_DIR/playbooks/infra/list-disks.yml"
+        ;;
+    list-volume-types)
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/list-volume-types.yml"
         ;;
     list-vms)
         ansible-playbook "$SCRIPT_DIR/playbooks/infra/list-vms.yml"
