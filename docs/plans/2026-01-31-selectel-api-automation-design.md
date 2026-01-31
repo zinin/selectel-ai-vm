@@ -161,7 +161,7 @@ Ubuntu 24.04+:
 
 ```bash
 # Системные пакеты
-sudo apt install python3-openstacksdk python3-openstackclient ansible
+sudo apt install python3-openstacksdk python3-openstackclient ansible jq
 
 # Проверить Ansible-коллекцию
 ansible-galaxy collection list | grep openstack
@@ -271,3 +271,9 @@ Ansible-модули `openstack.cloud` автоматически получаю
 | **Проверка существования тома** | Перед созданием boot-тома проверять, что том с таким именем не существует |
 | **--force для перезаписи** | image-upload и image-download требуют --force для перезаписи существующих ресурсов |
 | **Интерактивный выбор образа** | setup-start показывает список образов, если BASE_IMAGE_NAME не задан |
+| **Fingerprint в MD5 формате** | Использовать `ssh-keygen -E md5` для сравнения с OpenStack (возвращает MD5) |
+| **BASE_IMAGE_NAME в .env** | Добавить параметр и поддержку `--image` в setup-start |
+| **jq в зависимостях** | Добавить jq в prerequisites и проверку наличия в selectel.sh |
+| **Ожидание удаления образа** | В image-upload с --force дожидаться удаления старого образа перед загрузкой |
+| **Проверка status: active** | В image-download проверять статус образа перед скачиванием |
+| **details: true в volume_info** | Явно запрашивать детали для получения attachments |

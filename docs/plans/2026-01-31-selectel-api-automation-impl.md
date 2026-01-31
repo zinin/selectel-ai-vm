@@ -51,6 +51,9 @@ SECURITY_GROUP=default
 # === SSH ===
 SSH_KEY_FILE=~/.ssh/id_ed25519.pub
 SSH_KEY_NAME=ansible-key
+
+# === Setup VM ===
+BASE_IMAGE_NAME=              # образ для setup-start (например: "Ubuntu 24.04 LTS 64-bit")
 ```
 
 **Step 2: Проверить файл создан**
@@ -85,6 +88,12 @@ else
     exit 1
 fi
 
+# Проверка зависимостей
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is required but not installed. Run: sudo apt install jq"
+    exit 1
+fi
+
 # Экспорт переменных для Ansible
 export OS_AUTH_URL OS_USER_DOMAIN_NAME OS_PROJECT_DOMAIN_NAME OS_PROJECT_ID
 export OS_USERNAME OS_PASSWORD OS_REGION_NAME OS_AVAILABILITY_ZONE
@@ -111,6 +120,7 @@ Commands:
     --name <name>       VM name (default: gpu-vm-1)
 
   setup-start           Start VM without GPU (for initial setup)
+    --image <name>      Base image (default: BASE_IMAGE_NAME from .env)
     --name <name>       VM name (default: setup-vm-YYYYMMDD-HHMMSS)
 
   disk-delete           Delete a disk
@@ -209,18 +219,18 @@ case "$COMMAND" in
         ;;
     setup-start)
         VM_NAME=""
+        IMAGE_NAME="${BASE_IMAGE_NAME:-}"
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --name) VM_NAME="$2"; shift 2 ;;
+                --image) IMAGE_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
-        if [[ -n "$VM_NAME" ]]; then
-            EXTRA_VARS=$(jq -n --arg v "$VM_NAME" '{vm_name: $v}')
-            ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml" -e "$EXTRA_VARS"
-        else
-            ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml"
-        fi
+        EXTRA_VARS="{}"
+        [[ -n "$VM_NAME" ]] && EXTRA_VARS=$(echo "$EXTRA_VARS" | jq --arg v "$VM_NAME" '. + {vm_name: $v}')
+        [[ -n "$IMAGE_NAME" ]] && EXTRA_VARS=$(echo "$EXTRA_VARS" | jq --arg v "$IMAGE_NAME" '. + {base_image: $v}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml" -e "$EXTRA_VARS"
         ;;
     disk-delete)
         DISK_NAME=""
@@ -747,9 +757,9 @@ git commit -m "feat: add network-setup and network-info playbooks"
       ansible.builtin.set_fact:
         ssh_public_key: "{{ lookup('file', ssh_key_file | expanduser) }}"
 
-    - name: Calculate local key fingerprint
+    - name: Calculate local key fingerprint (MD5 format for OpenStack compatibility)
       ansible.builtin.shell: |
-        ssh-keygen -l -f {{ ssh_key_file | expanduser }} | awk '{print $2}'
+        ssh-keygen -E md5 -lf {{ ssh_key_file | expanduser }} | awk '{print $2}' | sed 's/^MD5://'
       register: local_fingerprint
       changed_when: false
 
@@ -1098,9 +1108,9 @@ git commit -m "feat: add gpu-stop playbook"
       ansible.builtin.set_fact:
         ssh_public_key: "{{ lookup('file', ssh_key_file | expanduser) }}"
 
-    - name: Calculate local key fingerprint
+    - name: Calculate local key fingerprint (MD5 format for OpenStack compatibility)
       ansible.builtin.shell: |
-        ssh-keygen -l -f {{ ssh_key_file | expanduser }} | awk '{print $2}'
+        ssh-keygen -E md5 -lf {{ ssh_key_file | expanduser }} | awk '{print $2}' | sed 's/^MD5://'
       register: local_fingerprint
       changed_when: false
 
@@ -1266,6 +1276,7 @@ git commit -m "feat: add setup-start playbook"
     - name: Get volume info
       openstack.cloud.volume_info:
         name: "{{ disk_name }}"
+        details: true
       register: volume_info
 
     - name: Display warning if not found
@@ -1363,6 +1374,7 @@ git commit -m "feat: add disk-delete playbook"
     - name: Get volume info
       openstack.cloud.volume_info:
         name: "{{ source_disk_name }}"
+        details: true
       register: volume_info
 
     - name: Validate exactly one volume found
@@ -1477,6 +1489,15 @@ git commit -m "feat: add image-create-from-disk playbook"
           Use image ID directly or use unique names.
       when: image_info.images | length > 1
 
+    - name: Wait for image to become active
+      openstack.cloud.image_info:
+        image: "{{ image_info.images[0].id }}"
+      register: image_status
+      until: image_status.images | length > 0 and image_status.images[0].status == 'active'
+      retries: 60
+      delay: 10
+      when: image_info.images[0].status != 'active'
+
     - name: Ensure output directory exists
       ansible.builtin.file:
         path: "{{ output_dir | expanduser }}"
@@ -1583,6 +1604,16 @@ git commit -m "feat: add image-download playbook"
       openstack.cloud.image:
         state: absent
         name: "{{ image_name }}"
+      register: delete_result
+      when: existing_image.images | length > 0 and force | bool
+
+    - name: Wait for image deletion to complete
+      openstack.cloud.image_info:
+        image: "{{ existing_image.images[0].id }}"
+      register: deleted_image_check
+      until: deleted_image_check.images | length == 0
+      retries: 30
+      delay: 5
       when: existing_image.images | length > 0 and force | bool
 
     - name: Determine disk format from extension
@@ -1894,3 +1925,15 @@ git commit -m "chore: final cleanup"
 | EDGE-2 (iter3) | Проверка существования boot volume перед созданием |
 | ERR-4 (iter3) | --force для перезаписи в image-upload и image-download |
 | DOC-1 (iter3) | Интерактивный выбор образа в setup-start если base_image не задан |
+
+### Iteration 4
+
+| Замечание | Изменение |
+|-----------|-----------|
+| IMPL-1 (iter4) | ssh-keygen -E md5 для совместимости fingerprint с OpenStack |
+| IMPL-2 (iter4) | Добавлены --image и BASE_IMAGE_NAME для setup-start |
+| OPS-1 (iter4) | jq добавлен в зависимости, проверка наличия в selectel.sh |
+| ERR-1 (iter4) | Ожидание удаления образа в image-upload перед загрузкой нового |
+| ERR-2 (iter4) | Проверка status: active в image-download перед скачиванием |
+| ERR-3 (iter4) | details: true в volume_info для disk-delete и image-create-from-disk |
+| SEC-1 (iter4) | Оставлено SSH 0.0.0.0/0 — пользователь решил не ограничивать |
