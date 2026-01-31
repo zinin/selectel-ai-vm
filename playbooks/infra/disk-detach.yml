@@ -1,0 +1,66 @@
+# playbooks/infra/disk-detach.yml
+---
+- name: Detach volume from server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  vars:
+    disk_name: ""
+
+  tasks:
+    - name: Validate input
+      ansible.builtin.fail:
+        msg: "disk_name is required"
+      when: disk_name == ""
+
+    - name: Get volume info
+      openstack.cloud.volume_info:
+        name: "{{ disk_name }}"
+        details: true
+      register: volume_info
+
+    - name: Fail if volume not found
+      ansible.builtin.fail:
+        msg: "Volume '{{ disk_name }}' not found."
+      when: volume_info.volumes | length == 0
+
+    - name: Validate exactly one volume found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 volume named '{{ disk_name }}', found {{ volume_info.volumes | length }}.
+          Use volume ID directly or use unique names.
+      when: volume_info.volumes | length > 1
+
+    - name: Check if volume is attached
+      ansible.builtin.debug:
+        msg: "Volume '{{ disk_name }}' is not attached to any server. Nothing to detach."
+      when: volume_info.volumes[0].attachments | length == 0
+
+    - name: Set attachment facts
+      ansible.builtin.set_fact:
+        attachment: "{{ volume_info.volumes[0].attachments[0] }}"
+      when: volume_info.volumes[0].attachments | length > 0
+
+    - name: Detach volume from server
+      openstack.cloud.server_volume:
+        state: absent
+        server: "{{ attachment.server_id }}"
+        volume: "{{ volume_info.volumes[0].id }}"
+        wait: true
+      when: volume_info.volumes[0].attachments | length > 0
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Volume Detached Successfully!
+          ========================================
+          Volume: {{ disk_name }}
+          Server ID: {{ attachment.server_id }}
+          ========================================
+      when: volume_info.volumes[0].attachments | length > 0

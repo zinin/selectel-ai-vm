@@ -140,6 +140,7 @@ ollama launch opencode --model glm-4.7-flash
 ./selectel.sh setup-start --name "my-setup"                 # With custom VM name
 
 # Disk Management
+./selectel.sh disk-detach --name "my-disk"                      # Detach disk from server (keeps both)
 ./selectel.sh disk-delete --name "my-disk"
 
 # Image Management

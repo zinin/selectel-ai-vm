@@ -73,6 +73,9 @@ Commands:
   disk-delete           Delete a disk
     --name <name>       Disk name
 
+  disk-detach           Detach disk from server (keeps both)
+    --name <name>       Disk name
+
   image-create-from-disk Create image from disk
     --disk <name>       Source disk name
     --name <name>       Image name
@@ -193,6 +196,18 @@ case "$COMMAND" in
         [[ -z "$DISK_NAME" ]] && { echo "Error: --name required"; exit 1; }
         EXTRA_VARS=$(jq -n --arg v "$DISK_NAME" '{disk_name: $v}')
         ansible-playbook "$SCRIPT_DIR/playbooks/infra/disk-delete.yml" -e "$EXTRA_VARS"
+        ;;
+    disk-detach)
+        DISK_NAME=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --name) require_arg "$1" "${2:-}"; DISK_NAME="$2"; shift 2 ;;
+                *) echo "Unknown option: $1"; exit 1 ;;
+            esac
+        done
+        [[ -z "$DISK_NAME" ]] && { echo "Error: --name required"; exit 1; }
+        EXTRA_VARS=$(jq -n --arg v "$DISK_NAME" '{disk_name: $v}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/disk-detach.yml" -e "$EXTRA_VARS"
         ;;
     image-create-from-disk)
         DISK_NAME=""
