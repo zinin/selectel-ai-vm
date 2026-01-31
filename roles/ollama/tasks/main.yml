@@ -42,3 +42,4 @@
   loop: "{{ ollama_models }}"
   register: ollama_pull_result
   changed_when: "'pulling' in ollama_pull_result.stdout"
+  when: ollama_models | length > 0
