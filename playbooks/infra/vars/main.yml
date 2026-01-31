@@ -1,0 +1,28 @@
+# playbooks/infra/vars/main.yml
+---
+# VM names (defaults, can be overridden with --name)
+gpu_vm_name: "gpu-vm-{{ ansible_date_time.date | replace('-','') }}-{{ ansible_date_time.time | replace(':','') }}"
+setup_vm_name: "setup-vm-{{ ansible_date_time.date | replace('-','') }}-{{ ansible_date_time.time | replace(':','') }}"
+
+# Disk defaults
+default_disk_size: "{{ lookup('env', 'DISK_SIZE_GB') | default(10, true) | int }}"
+default_disk_type: "{{ lookup('env', 'DISK_TYPE') | default('universal', true) }}"
+
+# Network
+network_name: "{{ lookup('env', 'NETWORK_NAME') | default('net', true) }}"
+subnet_cidr: "{{ lookup('env', 'SUBNET_CIDR') | default('192.168.0.0/24', true) }}"
+external_network: "{{ lookup('env', 'EXTERNAL_NETWORK') | default('external-network', true) }}"
+router_name: "{{ lookup('env', 'ROUTER_NAME') | default('router', true) }}"
+allocate_floating_ip: "{{ lookup('env', 'ALLOCATE_FLOATING_IP') | default('true', true) | bool }}"
+security_group: "{{ lookup('env', 'SECURITY_GROUP') | default('default', true) }}"
+
+# Flavors
+gpu_flavor_id: "{{ lookup('env', 'GPU_FLAVOR_ID') }}"
+setup_flavor_id: "{{ lookup('env', 'SETUP_FLAVOR_ID') }}"
+
+# SSH key
+ssh_key_file: "{{ lookup('env', 'SSH_KEY_FILE') | default('~/.ssh/id_ed25519.pub', true) }}"
+ssh_key_name: "{{ lookup('env', 'SSH_KEY_NAME') | default('ansible-key', true) }}"
+
+# Region
+availability_zone: "{{ lookup('env', 'OS_AVAILABILITY_ZONE') | default('ru-7a', true) }}"
