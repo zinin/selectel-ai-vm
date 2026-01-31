@@ -1,0 +1,22 @@
+# playbooks/infra/list-disks.yml
+---
+- name: List available volumes/disks
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Get all volumes
+      openstack.cloud.volume_info:
+        details: true
+      register: volumes_result
+
+    - name: Display volumes
+      ansible.builtin.debug:
+        msg: |
+
+          Available Volumes/Disks:
+          ========================
+          {% for vol in volumes_result.volumes | sort(attribute='name') %}
+          {{ "%-40s" | format(vol.name) }} | Size: {{ "%4d" | format(vol.size) }} GB | Status: {{ "%-10s" | format(vol.status) }} | ID: {{ vol.id }}
+          {% endfor %}
