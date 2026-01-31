@@ -42,7 +42,17 @@
         state: absent
         name: "{{ image_name }}"
         id: "{{ image_info.images[0].id }}"
+      register: delete_result
       when: image_info.images | length == 1
+
+    - name: Wait for image deletion to complete
+      openstack.cloud.image_info:
+        image: "{{ image_info.images[0].id }}"
+      register: deleted_image_check
+      until: deleted_image_check.images | length == 0
+      retries: 30
+      delay: 5
+      when: image_info.images | length == 1 and delete_result is changed
 
     - name: Display result
       ansible.builtin.debug:

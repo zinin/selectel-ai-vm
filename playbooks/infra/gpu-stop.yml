@@ -54,18 +54,34 @@
           Use server ID directly or ensure unique VM names.
       when: server_info.servers | length > 1
 
+    - name: Get floating IPs for server
+      ansible.builtin.set_fact:
+        server_floating_ips: >-
+          {{ server_info.servers[0].addresses | dict2items | map(attribute='value') | flatten
+             | selectattr('OS-EXT-IPS:type', 'equalto', 'floating') | map(attribute='addr') | list }}
+      when: server_info.servers | length > 0
+
+    - name: Warn if no floating IPs found
+      ansible.builtin.debug:
+        msg: "No floating IPs found for server '{{ vm_name }}'"
+      when: server_info.servers | length > 0 and (server_floating_ips | default([]) | length == 0)
+
     - name: Release floating IP
       openstack.cloud.floating_ip:
         state: absent
         server: "{{ server_info.servers[0].id }}"
         floating_ip_address: "{{ item }}"
         network: "{{ external_network }}"
-      loop: >-
-        {{ server_info.servers[0].addresses | dict2items | map(attribute='value') | flatten
-           | selectattr('OS-EXT-IPS:type', 'equalto', 'floating') | map(attribute='addr') | list }}
-      when: server_info.servers | length > 0
+        wait: true
+      loop: "{{ server_floating_ips | default([]) }}"
+      when: server_info.servers | length > 0 and (server_floating_ips | default([]) | length > 0)
       register: floating_ip_result
       failed_when: floating_ip_result.failed and 'not found' not in (floating_ip_result.msg | default('') | lower)
+
+    - name: Wait for floating IP release to propagate
+      ansible.builtin.pause:
+        seconds: 3
+      when: server_info.servers | length > 0 and (server_floating_ips | default([]) | length > 0)
 
     - name: Delete server (keeps attached volumes)
       openstack.cloud.server:

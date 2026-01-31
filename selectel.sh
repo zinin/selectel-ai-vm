@@ -14,13 +14,16 @@ else
 fi
 
 # Проверка зависимостей
-if ! command -v jq &> /dev/null; then
-    echo "Error: jq is required but not installed. Run: sudo apt install jq"
-    exit 1
-fi
+for cmd in jq ansible-playbook openstack; do
+    if ! command -v "$cmd" &> /dev/null; then
+        echo "Error: $cmd is required but not installed."
+        echo "Run: sudo apt install jq python3-openstackclient ansible"
+        exit 1
+    fi
+done
 
 # Валидация обязательных переменных OpenStack
-for var in OS_AUTH_URL OS_PROJECT_ID OS_USERNAME OS_PASSWORD; do
+for var in OS_AUTH_URL OS_PROJECT_ID OS_USERNAME OS_PASSWORD OS_USER_DOMAIN_NAME OS_PROJECT_DOMAIN_NAME; do
     if [[ -z "${!var:-}" ]]; then
         echo "Error: $var is not set in .env"
         exit 1

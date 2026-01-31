@@ -29,6 +29,10 @@
         name: "{{ security_group }}"
       register: sgs
 
+    - name: Check if network setup is needed
+      ansible.builtin.set_fact:
+        network_setup_needed: "{{ networks.networks | length == 0 or subnets.subnets | length == 0 or routers.routers | length == 0 }}"
+
     - name: Display network info
       ansible.builtin.debug:
         msg: |
@@ -40,6 +44,11 @@
           Router: {{ routers.routers[0].name if routers.routers | length > 0 else 'NOT FOUND' }}
           Security Group: {{ sgs.security_groups[0].name if sgs.security_groups | length > 0 else 'NOT FOUND' }}
           External Network: {{ external_network }}
+          {% if network_setup_needed %}
+
+          WARNING: Network infrastructure incomplete!
+          Run: ./selectel.sh network-setup
+          {% endif %}
 
           Security Group Rules:
           ---------------------

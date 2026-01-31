@@ -58,6 +58,9 @@
           -- {{ image_name | quote }}
       register: image_create_result
       changed_when: true
+      failed_when: >
+        image_create_result.rc != 0 or
+        'error' in (image_create_result.stderr | default('') | lower)
 
     - name: Parse image ID from result
       ansible.builtin.set_fact:

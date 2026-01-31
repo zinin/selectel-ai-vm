@@ -54,6 +54,21 @@
         state: directory
         mode: '0755'
 
+    - name: Check available disk space
+      ansible.builtin.shell:
+        cmd: df -B1 "{{ output_dir | expanduser }}" | tail -1 | awk '{print $4}'
+      register: available_space
+      changed_when: false
+
+    - name: Fail if not enough disk space
+      ansible.builtin.fail:
+        msg: "Not enough disk space. Required: {{ (image_info.images[0].size * 1.1) | int }} bytes (image size + 10%), Available: {{ available_space.stdout }} bytes"
+      when: (available_space.stdout | int) < (image_info.images[0].size | default(0) | int * 1.1)
+
+    - name: Display download info
+      ansible.builtin.debug:
+        msg: "Downloading {{ (image_info.images[0].size | default(0) / 1024 / 1024 / 1024) | round(2) }} GB image..."
+
     - name: Set output filename (use actual disk format from image metadata)
       ansible.builtin.set_fact:
         output_file: "{{ output_dir | expanduser }}/{{ image_name }}.{{ image_info.images[0].disk_format | default('raw') }}"

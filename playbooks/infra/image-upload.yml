@@ -67,13 +67,7 @@
 
     - name: Determine disk format from extension (case-insensitive)
       ansible.builtin.set_fact:
-        disk_format: >-
-          {% set ext = image_file | lower %}
-          {% if ext.endswith('.qcow2') %}qcow2
-          {% elif ext.endswith('.vmdk') %}vmdk
-          {% elif ext.endswith('.vdi') %}vdi
-          {% elif ext.endswith('.vhd') or ext.endswith('.vhdx') %}vpc
-          {% else %}raw{% endif %}
+        disk_format: "{{ 'qcow2' if (image_file | lower).endswith('.qcow2') else ('vmdk' if (image_file | lower).endswith('.vmdk') else ('vdi' if (image_file | lower).endswith('.vdi') else ('vpc' if (image_file | lower).endswith('.vhd') or (image_file | lower).endswith('.vhdx') else 'raw'))) }}"
 
     - name: Upload image
       openstack.cloud.image:

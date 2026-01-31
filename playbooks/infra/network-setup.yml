@@ -54,7 +54,7 @@
         port_range_max: 22
         remote_ip_prefix: 0.0.0.0/0
       register: ssh_rule_result
-      failed_when: ssh_rule_result.failed and 'already exists' not in (ssh_rule_result.msg | default(''))
+      failed_when: ssh_rule_result.failed and 'already exists' not in (ssh_rule_result.msg | default('') | lower)
 
     - name: Add ICMP rule to security group
       openstack.cloud.security_group_rule:
@@ -63,7 +63,7 @@
         protocol: icmp
         remote_ip_prefix: 0.0.0.0/0
       register: icmp_rule_result
-      failed_when: icmp_rule_result.failed and 'already exists' not in (icmp_rule_result.msg | default(''))
+      failed_when: icmp_rule_result.failed and 'already exists' not in (icmp_rule_result.msg | default('') | lower)
 
     - name: Display result
       ansible.builtin.debug:
