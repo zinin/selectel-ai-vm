@@ -1,0 +1,42 @@
+# playbooks/infra/network-info.yml
+---
+- name: Show network information
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Get network info
+      openstack.cloud.networks_info:
+        name: "{{ network_name }}"
+      register: networks
+
+    - name: Get subnet info
+      openstack.cloud.subnets_info:
+        name: "{{ network_name }}-subnet"
+      register: subnets
+
+    - name: Get router info
+      openstack.cloud.routers_info:
+        name: "{{ router_name }}"
+      register: routers
+
+    - name: Get security group info
+      openstack.cloud.security_group_info:
+        name: "{{ security_group }}"
+      register: sgs
+
+    - name: Display network info
+      ansible.builtin.debug:
+        msg: |
+
+          Network Configuration:
+          ======================
+          Network: {{ networks.networks[0].name if networks.networks | length > 0 else 'NOT FOUND' }}
+          Subnet: {{ subnets.subnets[0].cidr if subnets.subnets | length > 0 else 'NOT FOUND' }}
+          Router: {{ routers.routers[0].name if routers.routers | length > 0 else 'NOT FOUND' }}
+          Security Group: {{ sgs.security_groups[0].name if sgs.security_groups | length > 0 else 'NOT FOUND' }}
+          External Network: {{ external_network }}

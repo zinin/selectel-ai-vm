@@ -1,0 +1,79 @@
+# playbooks/infra/network-setup.yml
+---
+- name: Setup network infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Create network
+      openstack.cloud.network:
+        state: present
+        name: "{{ network_name }}"
+      register: network
+
+    - name: Create subnet
+      openstack.cloud.subnet:
+        state: present
+        name: "{{ network_name }}-subnet"
+        network_name: "{{ network_name }}"
+        cidr: "{{ subnet_cidr }}"
+        dns_nameservers:
+          - 8.8.8.8
+          - 8.8.4.4
+      register: subnet
+
+    - name: Create router
+      openstack.cloud.router:
+        state: present
+        name: "{{ router_name }}"
+        network: "{{ external_network }}"
+        interfaces:
+          - "{{ network_name }}-subnet"
+      register: router
+
+    - name: Create security group (if not default)
+      openstack.cloud.security_group:
+        state: present
+        name: "{{ security_group }}"
+        description: "Security group for Ansible-managed VMs"
+      register: sg
+      when: security_group != 'default'
+
+    # Добавляем правила всегда — включая default SG
+    # Используем failed_when вместо ignore_errors для правильной обработки дубликатов
+    - name: Add SSH rule to security group
+      openstack.cloud.security_group_rule:
+        state: present
+        security_group: "{{ security_group }}"
+        protocol: tcp
+        port_range_min: 22
+        port_range_max: 22
+        remote_ip_prefix: 0.0.0.0/0
+      register: ssh_rule_result
+      failed_when: ssh_rule_result.failed and 'already exists' not in (ssh_rule_result.msg | default(''))
+
+    - name: Add ICMP rule to security group
+      openstack.cloud.security_group_rule:
+        state: present
+        security_group: "{{ security_group }}"
+        protocol: icmp
+        remote_ip_prefix: 0.0.0.0/0
+      register: icmp_rule_result
+      failed_when: icmp_rule_result.failed and 'already exists' not in (icmp_rule_result.msg | default(''))
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Network Infrastructure Created!
+          ========================================
+          Network: {{ network.network.name }} ({{ network.network.id }})
+          Subnet: {{ subnet.subnet.name }} ({{ subnet.subnet.cidr }})
+          Router: {{ router.router.name }} ({{ router.router.id }})
+          Security Group: {{ security_group }}
+          ========================================
