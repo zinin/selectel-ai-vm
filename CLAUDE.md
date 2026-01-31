@@ -1,41 +1,48 @@
-# CLAUDE.md
+# Selectel AI VM
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Ansible playbooks + CLI для GPU VM в Selectel (Ubuntu 24.04).
 
-## Project Overview
-
-Ansible playbooks для настройки виртуальных машин с GPU в Selectel (Ubuntu 24.04).
-
-## Commands
+## Quick Start
 
 ```bash
-# Проверка подключения к хостам
-ansible gpu_vms -m ping
+# Инфраструктура
+./selectel.sh gpu-start --image "base-image"  # Запуск GPU VM
+./selectel.sh gpu-stop --name "gpu-vm-..."    # Остановка
 
-# Проверка синтаксиса
-ansible-playbook playbooks/site.yml --syntax-check
-
-# Запуск playbook
-ansible-playbook playbooks/site.yml
-
-# Dry-run (без изменений)
-ansible-playbook playbooks/site.yml --check
-
-# Запуск конкретной роли через тег (если добавлены теги)
-ansible-playbook playbooks/site.yml --tags "base"
+# Настройка VM
+ansible-playbook playbooks/site.yml           # Применить роли
+ansible gpu_vms -m ping                       # Проверка связи
 ```
 
 ## Architecture
 
-- **Подключение**: root по SSH ключу (host_key_checking отключен, become отключен)
-- **Роли**: `roles/` — каждая роль имеет `tasks/main.yml`, опционально `defaults/main.yml` и `handlers/main.yml`
-- **Playbooks**: `playbooks/site.yml` — основной playbook, применяет роли к группе `gpu_vms`
-- **Inventory**: `inventory/hosts.yml` — группа `gpu_vms` с хостами
-- **Group vars**: `inventory/group_vars/all.yml` — глобальные переменные (`target_user`, `timezone`, `locale`)
+| Path | Purpose |
+|------|---------|
+| `selectel.sh` | CLI обёртка для управления инфраструктурой |
+| `playbooks/site.yml` | Основной playbook для настройки VM |
+| `playbooks/infra/` | Ansible playbooks для Selectel API |
+| `roles/` | base, user, ollama, claude_code |
+| `inventory/hosts.yml` | Хосты (группа `gpu_vms`) |
+| `.env` | Credentials для Selectel (из `.env.example`) |
+
+## Key Patterns
+
+**Подключение**: root по SSH ключу, host_key_checking отключен.
+
+**Роли**: `roles/<name>/tasks/main.yml` + опционально `defaults/` и `handlers/`.
+
+**Infra playbooks**: localhost, используют `openstack.cloud` collection.
 
 ## Adding New Roles
 
-1. Создать `roles/<role_name>/tasks/main.yml`
-2. Опционально: `roles/<role_name>/defaults/main.yml` для переменных по умолчанию
-3. Опционально: `roles/<role_name>/handlers/main.yml` для handlers
-4. Добавить роль в `playbooks/site.yml`
+1. Создать `roles/<name>/tasks/main.yml`
+2. Добавить роль в `playbooks/site.yml`
+
+## Adding New Infra Commands
+
+1. Создать `playbooks/infra/<command>.yml`
+2. Добавить case в `selectel.sh`
+
+## Tech Stack
+
+Ansible 2.9+, OpenStack SDK, Ubuntu 24.04
