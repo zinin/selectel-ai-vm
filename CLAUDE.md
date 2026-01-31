@@ -12,6 +12,9 @@ Ansible playbooks + CLI для GPU VM в Selectel (Ubuntu 24.04).
 # Настройка VM
 ansible-playbook playbooks/site.yml           # Применить роли
 ansible gpu_vms -m ping                       # Проверка связи
+
+# Провижен VM
+./bootstrap.sh                                # Применить роли (читает .env)
 ```
 
 ## Architecture
