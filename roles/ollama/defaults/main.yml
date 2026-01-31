@@ -1,4 +1,2 @@
 ---
-ollama_models:
-  - qwen3-coder:30b
-  - glm-4.7-flash
+ollama_models: []
