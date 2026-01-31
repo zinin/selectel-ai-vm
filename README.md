@@ -57,7 +57,7 @@ ansible-playbook playbooks/site.yml
 - SSH ключи от root
 
 Параметры (можно переопределить):
-- `username` — имя пользователя (по умолчанию: zinin)
+- `username` — имя пользователя (по умолчанию: user)
 - `user_uid` — UID (по умолчанию: 1000)
 - `user_groups` — список групп
 
@@ -67,16 +67,16 @@ ansible-playbook playbooks/site.yml
 - `OLLAMA_KEEP_ALIVE=-1` — модели остаются в памяти
 - `OLLAMA_CONTEXT_LENGTH=30000` — увеличенный контекст
 
-### claude-code
+### claude-code (отключена по умолчанию)
 
-Установка [Claude Code](https://claude.ai/code) для пользователя zinin.
+Установка [Claude Code](https://claude.ai/code) для пользователя username.
 
 ## Подключение к Ollama
 
 Ollama слушает только на localhost для безопасности. Для доступа используйте SSH туннель:
 
 ```bash
-ssh -L 11434:localhost:11434 zinin@<server-ip>
+ssh -L 11434:localhost:11434 username@<server-ip>
 ```
 
 После этого Ollama доступна локально на `http://localhost:11434`.
@@ -86,7 +86,7 @@ ssh -L 11434:localhost:11434 zinin@<server-ip>
 ```
 Host gpu-vm
     HostName <server-ip>
-    User zinin
+    User username
     LocalForward 11434 localhost:11434
 ```
 
