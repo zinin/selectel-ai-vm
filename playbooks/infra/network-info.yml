@@ -40,3 +40,13 @@
           Router: {{ routers.routers[0].name if routers.routers | length > 0 else 'NOT FOUND' }}
           Security Group: {{ sgs.security_groups[0].name if sgs.security_groups | length > 0 else 'NOT FOUND' }}
           External Network: {{ external_network }}
+
+          Security Group Rules:
+          ---------------------
+          {% if sgs.security_groups | length > 0 %}
+          {% for rule in sgs.security_groups[0].security_group_rules %}
+          {{ "%-8s" | format(rule.direction) }} | {{ "%-6s" | format(rule.protocol | default('any')) }} | Port: {{ rule.port_range_min | default('*') }}-{{ rule.port_range_max | default('*') }} | {{ rule.remote_ip_prefix | default(rule.remote_group_id | default('any')) }}
+          {% endfor %}
+          {% else %}
+          Security group not found.
+          {% endif %}

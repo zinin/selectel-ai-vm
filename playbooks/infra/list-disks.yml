@@ -20,3 +20,6 @@
           {% for vol in volumes_result.volumes | sort(attribute='name') %}
           {{ "%-40s" | format(vol.name) }} | Size: {{ "%4d" | format(vol.size) }} GB | Status: {{ "%-10s" | format(vol.status) }} | ID: {{ vol.id }}
           {% endfor %}
+          {% if volumes_result.volumes | length == 0 %}
+          No volumes found.
+          {% endif %}

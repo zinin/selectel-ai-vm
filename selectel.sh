@@ -19,9 +19,27 @@ if ! command -v jq &> /dev/null; then
     exit 1
 fi
 
+# Валидация обязательных переменных OpenStack
+for var in OS_AUTH_URL OS_PROJECT_ID OS_USERNAME OS_PASSWORD; do
+    if [[ -z "${!var:-}" ]]; then
+        echo "Error: $var is not set in .env"
+        exit 1
+    fi
+done
+
 # Экспорт переменных для Ansible
 export OS_AUTH_URL OS_USER_DOMAIN_NAME OS_PROJECT_DOMAIN_NAME OS_PROJECT_ID
 export OS_USERNAME OS_PASSWORD OS_REGION_NAME OS_AVAILABILITY_ZONE
+
+# Вспомогательная функция для проверки аргументов
+require_arg() {
+    local opt="$1"
+    local val="${2:-}"
+    if [[ -z "$val" || "$val" == --* ]]; then
+        echo "Error: $opt requires a value"
+        exit 1
+    fi
+}
 
 usage() {
     cat <<EOF
@@ -42,7 +60,7 @@ Commands:
     --name <name>       VM name (default: gpu-vm-YYYYMMDD-HHMMSS)
 
   gpu-stop              Stop and delete GPU VM (keeps disk)
-    --name <name>       VM name (default: gpu-vm-1)
+    --name <name>       VM name (required; shows list if omitted)
 
   setup-start           Start VM without GPU (for initial setup)
     --image <name>      Base image (default: BASE_IMAGE_NAME from .env)
@@ -102,9 +120,9 @@ case "$COMMAND" in
         VM_NAME=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --disk) DISK_NAME="$2"; shift 2 ;;
-                --image) IMAGE_NAME="$2"; shift 2 ;;
-                --name) VM_NAME="$2"; shift 2 ;;
+                --disk) require_arg "$1" "${2:-}"; DISK_NAME="$2"; shift 2 ;;
+                --image) require_arg "$1" "${2:-}"; IMAGE_NAME="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; VM_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
@@ -131,7 +149,7 @@ case "$COMMAND" in
         VM_NAME=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --name) VM_NAME="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; VM_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
@@ -147,8 +165,8 @@ case "$COMMAND" in
         IMAGE_NAME="${BASE_IMAGE_NAME:-}"
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --name) VM_NAME="$2"; shift 2 ;;
-                --image) IMAGE_NAME="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; VM_NAME="$2"; shift 2 ;;
+                --image) require_arg "$1" "${2:-}"; IMAGE_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
@@ -161,7 +179,7 @@ case "$COMMAND" in
         DISK_NAME=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --name) DISK_NAME="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; DISK_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
@@ -174,8 +192,8 @@ case "$COMMAND" in
         IMAGE_NAME=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --disk) DISK_NAME="$2"; shift 2 ;;
-                --name) IMAGE_NAME="$2"; shift 2 ;;
+                --disk) require_arg "$1" "${2:-}"; DISK_NAME="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; IMAGE_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
@@ -189,8 +207,8 @@ case "$COMMAND" in
         FORCE=false
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --name) IMAGE_NAME="$2"; shift 2 ;;
-                --output) OUTPUT_DIR="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; IMAGE_NAME="$2"; shift 2 ;;
+                --output) require_arg "$1" "${2:-}"; OUTPUT_DIR="$2"; shift 2 ;;
                 --force) FORCE=true; shift ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
@@ -205,8 +223,8 @@ case "$COMMAND" in
         FORCE=false
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --file) FILE_PATH="$2"; shift 2 ;;
-                --name) IMAGE_NAME="$2"; shift 2 ;;
+                --file) require_arg "$1" "${2:-}"; FILE_PATH="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; IMAGE_NAME="$2"; shift 2 ;;
                 --force) FORCE=true; shift ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
@@ -219,7 +237,7 @@ case "$COMMAND" in
         IMAGE_NAME=""
         while [[ $# -gt 0 ]]; do
             case "$1" in
-                --name) IMAGE_NAME="$2"; shift 2 ;;
+                --name) require_arg "$1" "${2:-}"; IMAGE_NAME="$2"; shift 2 ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
