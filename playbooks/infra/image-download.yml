@@ -44,8 +44,8 @@
         image: "{{ image_info.images[0].id }}"
       register: image_status
       until: image_status.images | length > 0 and image_status.images[0].status == 'active'
-      retries: 60
-      delay: 10
+      retries: 180
+      delay: 30
       when: image_info.images[0].status != 'active'
 
     - name: Ensure output directory exists

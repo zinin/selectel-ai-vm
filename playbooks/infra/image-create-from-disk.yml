@@ -72,8 +72,8 @@
         image: "{{ created_image_id }}"
       register: image_info
       until: image_info.images | length > 0 and image_info.images[0].status == 'active'
-      retries: 60
-      delay: 10
+      retries: 180
+      delay: 30
 
     # === Результат ===
     - name: Display result
