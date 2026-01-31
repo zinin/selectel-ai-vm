@@ -1,0 +1,94 @@
+# playbooks/infra/image-upload.yml
+---
+- name: Upload local image to cloud
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  vars:
+    image_file: ""
+    image_name: ""
+    force: false  # Требовать --force для перезаписи
+
+  tasks:
+    - name: Validate input
+      ansible.builtin.fail:
+        msg: "image_file and image_name are required"
+      when: image_file == "" or image_name == ""
+
+    - name: Check if file exists
+      ansible.builtin.stat:
+        path: "{{ image_file | expanduser }}"
+      register: file_stat
+
+    - name: Fail if file not found
+      ansible.builtin.fail:
+        msg: "File '{{ image_file }}' not found"
+      when: not file_stat.stat.exists
+
+    - name: Check if image with same name already exists
+      openstack.cloud.image_info:
+        image: "{{ image_name }}"
+      register: existing_image
+
+    - name: Validate at most one image found with this name
+      ansible.builtin.fail:
+        msg: |
+          Expected 0 or 1 image named '{{ image_name }}', found {{ existing_image.images | length }}:
+          {% for img in existing_image.images %}
+          - {{ img.name }} (ID: {{ img.id }})
+          {% endfor %}
+          Use image ID directly or use unique names.
+      when: existing_image.images | length > 1
+
+    - name: Fail if image exists and force is false
+      ansible.builtin.fail:
+        msg: "Image '{{ image_name }}' already exists. Use --force to overwrite."
+      when: existing_image.images | length == 1 and not force | bool
+
+    - name: Delete existing image if force is true
+      openstack.cloud.image:
+        state: absent
+        name: "{{ image_name }}"
+      register: delete_result
+      when: existing_image.images | length == 1 and force | bool
+
+    - name: Wait for image deletion to complete
+      openstack.cloud.image_info:
+        image: "{{ existing_image.images[0].id }}"
+      register: deleted_image_check
+      until: deleted_image_check.images | length == 0
+      retries: 30
+      delay: 5
+      when: existing_image.images | length == 1 and force | bool
+
+    - name: Determine disk format from extension
+      ansible.builtin.set_fact:
+        disk_format: "{{ 'qcow2' if image_file.endswith('.qcow2') else 'raw' }}"
+
+    - name: Upload image
+      openstack.cloud.image:
+        state: present
+        name: "{{ image_name }}"
+        filename: "{{ image_file | expanduser }}"
+        container_format: bare
+        disk_format: "{{ disk_format }}"
+        wait: true
+      register: image_result
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Image Uploaded Successfully!
+          ========================================
+          Name: {{ image_name }}
+          ID: {{ image_result.image.id }}
+          Status: {{ image_result.image.status }}
+
+          Next: ./selectel.sh gpu-start --image "{{ image_name }}"
+          ========================================
