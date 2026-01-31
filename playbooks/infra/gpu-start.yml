@@ -109,8 +109,8 @@
         key_name: "{{ ssh_key_name }}"
         security_groups:
           - "{{ security_group }}"
-        networks:
-          - name: "{{ network_name }}"
+        nics:
+          - net-name: "{{ network_name }}"
         availability_zone: "{{ availability_zone }}"
         auto_ip: false
         timeout: "{{ server_create_timeout }}"
