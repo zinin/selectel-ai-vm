@@ -123,10 +123,12 @@ Commands:
   image-download        Download image locally
     --name <name>       Image name
     --output <path>     Output directory
+    --force             Overwrite existing file
 
   image-upload          Upload local image
     --file <path>       Image file path
     --name <name>       Image name
+    --force             Overwrite existing image
 
   image-delete          Delete image
     --name <name>       Image name
@@ -176,14 +178,15 @@ case "$COMMAND" in
             echo "Error: specify either --disk or --image, not both"
             exit 1
         fi
-        EXTRA_VARS=""
-        [[ -n "$VM_NAME" ]] && EXTRA_VARS="$EXTRA_VARS -e vm_name=$VM_NAME"
+        # Передаём extra-vars в JSON для поддержки пробелов в именах
+        EXTRA_VARS="{}"
+        [[ -n "$VM_NAME" ]] && EXTRA_VARS=$(echo "$EXTRA_VARS" | jq --arg v "$VM_NAME" '. + {vm_name: $v}')
         if [[ -n "$DISK_NAME" ]]; then
-            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-start.yml" \
-                -e "boot_disk_name=$DISK_NAME" $EXTRA_VARS
+            EXTRA_VARS=$(echo "$EXTRA_VARS" | jq --arg v "$DISK_NAME" '. + {boot_disk_name: $v}')
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-start.yml" -e "$EXTRA_VARS"
         elif [[ -n "$IMAGE_NAME" ]]; then
-            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-start.yml" \
-                -e "boot_image_name=$IMAGE_NAME" $EXTRA_VARS
+            EXTRA_VARS=$(echo "$EXTRA_VARS" | jq --arg v "$IMAGE_NAME" '. + {boot_image_name: $v}')
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-start.yml" -e "$EXTRA_VARS"
         else
             echo "Error: specify --disk or --image"
             exit 1
@@ -198,8 +201,8 @@ case "$COMMAND" in
             esac
         done
         if [[ -n "$VM_NAME" ]]; then
-            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-stop.yml" \
-                -e "vm_name=$VM_NAME"
+            EXTRA_VARS=$(jq -n --arg v "$VM_NAME" '{vm_name: $v}')
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-stop.yml" -e "$EXTRA_VARS"
         else
             ansible-playbook "$SCRIPT_DIR/playbooks/infra/gpu-stop.yml"
         fi
@@ -213,8 +216,8 @@ case "$COMMAND" in
             esac
         done
         if [[ -n "$VM_NAME" ]]; then
-            ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml" \
-                -e "vm_name=$VM_NAME"
+            EXTRA_VARS=$(jq -n --arg v "$VM_NAME" '{vm_name: $v}')
+            ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml" -e "$EXTRA_VARS"
         else
             ansible-playbook "$SCRIPT_DIR/playbooks/infra/setup-start.yml"
         fi
@@ -228,8 +231,8 @@ case "$COMMAND" in
             esac
         done
         [[ -z "$DISK_NAME" ]] && { echo "Error: --name required"; exit 1; }
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/disk-delete.yml" \
-            -e "disk_name=$DISK_NAME"
+        EXTRA_VARS=$(jq -n --arg v "$DISK_NAME" '{disk_name: $v}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/disk-delete.yml" -e "$EXTRA_VARS"
         ;;
     image-create-from-disk)
         DISK_NAME=""
@@ -242,39 +245,40 @@ case "$COMMAND" in
             esac
         done
         [[ -z "$DISK_NAME" || -z "$IMAGE_NAME" ]] && { echo "Error: --disk and --name required"; exit 1; }
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-create-from-disk.yml" \
-            -e "source_disk_name=$DISK_NAME" \
-            -e "image_name=$IMAGE_NAME"
+        EXTRA_VARS=$(jq -n --arg d "$DISK_NAME" --arg n "$IMAGE_NAME" '{source_disk_name: $d, image_name: $n}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-create-from-disk.yml" -e "$EXTRA_VARS"
         ;;
     image-download)
         IMAGE_NAME=""
         OUTPUT_DIR=""
+        FORCE=false
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --name) IMAGE_NAME="$2"; shift 2 ;;
                 --output) OUTPUT_DIR="$2"; shift 2 ;;
+                --force) FORCE=true; shift ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
         [[ -z "$IMAGE_NAME" || -z "$OUTPUT_DIR" ]] && { echo "Error: --name and --output required"; exit 1; }
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-download.yml" \
-            -e "image_name=$IMAGE_NAME" \
-            -e "output_dir=$OUTPUT_DIR"
+        EXTRA_VARS=$(jq -n --arg n "$IMAGE_NAME" --arg o "$OUTPUT_DIR" --argjson f "$FORCE" '{image_name: $n, output_dir: $o, force: $f}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-download.yml" -e "$EXTRA_VARS"
         ;;
     image-upload)
         FILE_PATH=""
         IMAGE_NAME=""
+        FORCE=false
         while [[ $# -gt 0 ]]; do
             case "$1" in
                 --file) FILE_PATH="$2"; shift 2 ;;
                 --name) IMAGE_NAME="$2"; shift 2 ;;
+                --force) FORCE=true; shift ;;
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
         [[ -z "$FILE_PATH" || -z "$IMAGE_NAME" ]] && { echo "Error: --file and --name required"; exit 1; }
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-upload.yml" \
-            -e "image_file=$FILE_PATH" \
-            -e "image_name=$IMAGE_NAME"
+        EXTRA_VARS=$(jq -n --arg f "$FILE_PATH" --arg n "$IMAGE_NAME" --argjson force "$FORCE" '{image_file: $f, image_name: $n, force: $force}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-upload.yml" -e "$EXTRA_VARS"
         ;;
     image-delete)
         IMAGE_NAME=""
@@ -285,8 +289,8 @@ case "$COMMAND" in
             esac
         done
         [[ -z "$IMAGE_NAME" ]] && { echo "Error: --name required"; exit 1; }
-        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-delete.yml" \
-            -e "image_name=$IMAGE_NAME"
+        EXTRA_VARS=$(jq -n --arg v "$IMAGE_NAME" '{image_name: $v}')
+        ansible-playbook "$SCRIPT_DIR/playbooks/infra/image-delete.yml" -e "$EXTRA_VARS"
         ;;
     *)
         echo "Unknown command: $COMMAND"
@@ -601,6 +605,7 @@ git commit -m "feat: add list-vms playbook"
       when: security_group != 'default'
 
     # Добавляем правила всегда — включая default SG
+    # Используем failed_when вместо ignore_errors для правильной обработки дубликатов
     - name: Add SSH rule to security group
       openstack.cloud.security_group_rule:
         state: present
@@ -609,7 +614,8 @@ git commit -m "feat: add list-vms playbook"
         port_range_min: 22
         port_range_max: 22
         remote_ip_prefix: 0.0.0.0/0
-      ignore_errors: true  # Правило может уже существовать
+      register: ssh_rule_result
+      failed_when: ssh_rule_result.failed and 'already exists' not in (ssh_rule_result.msg | default(''))
 
     - name: Add ICMP rule to security group
       openstack.cloud.security_group_rule:
@@ -617,7 +623,8 @@ git commit -m "feat: add list-vms playbook"
         security_group: "{{ security_group }}"
         protocol: icmp
         remote_ip_prefix: 0.0.0.0/0
-      ignore_errors: true  # Правило может уже существовать
+      register: icmp_rule_result
+      failed_when: icmp_rule_result.failed and 'already exists' not in (icmp_rule_result.msg | default(''))
 
     - name: Display result
       ansible.builtin.debug:
@@ -735,16 +742,35 @@ git commit -m "feat: add network-setup and network-info playbooks"
       ansible.builtin.set_fact:
         vm_name: "{{ vm_name | default('gpu-vm-' + ansible_date_time.date | replace('-','') + '-' + ansible_date_time.time | replace(':','')) }}"
 
-    # === SSH keypair ===
+    # === SSH keypair с проверкой fingerprint ===
     - name: Read SSH public key
       ansible.builtin.set_fact:
         ssh_public_key: "{{ lookup('file', ssh_key_file | expanduser) }}"
+
+    - name: Calculate local key fingerprint
+      ansible.builtin.shell: |
+        ssh-keygen -l -f {{ ssh_key_file | expanduser }} | awk '{print $2}'
+      register: local_fingerprint
+      changed_when: false
+
+    - name: Get existing keypair info
+      openstack.cloud.keypair_info:
+        name: "{{ ssh_key_name }}"
+      register: existing_keypair
+
+    - name: Fail if keypair exists with different fingerprint
+      ansible.builtin.fail:
+        msg: "Keypair '{{ ssh_key_name }}' exists with different fingerprint. Cloud: {{ existing_keypair.keypairs[0].fingerprint }}, Local: {{ local_fingerprint.stdout }}"
+      when: >
+        existing_keypair.keypairs | length > 0 and
+        existing_keypair.keypairs[0].fingerprint != local_fingerprint.stdout
 
     - name: Ensure keypair exists
       openstack.cloud.keypair:
         state: present
         name: "{{ ssh_key_name }}"
         public_key: "{{ ssh_public_key }}"
+      when: existing_keypair.keypairs | length == 0
 
     # === Boot from existing disk ===
     - name: Get existing disk info
@@ -758,6 +784,11 @@ git commit -m "feat: add network-setup and network-info playbooks"
         msg: "Expected exactly 1 disk named '{{ boot_disk_name }}', found {{ disk_info.volumes | length }}"
       when: boot_disk_name != "" and disk_info.volumes | length != 1
 
+    - name: Validate disk is available (not in-use)
+      ansible.builtin.fail:
+        msg: "Disk '{{ boot_disk_name }}' is in-use (status: {{ disk_info.volumes[0].status }}). Detach it first."
+      when: boot_disk_name != "" and disk_info.volumes | length == 1 and disk_info.volumes[0].status != 'available'
+
     - name: Create server from existing disk
       openstack.cloud.server:
         state: present
@@ -768,13 +799,19 @@ git commit -m "feat: add network-setup and network-info playbooks"
         key_name: "{{ ssh_key_name }}"
         security_groups:
           - "{{ security_group }}"
-        network: "{{ network_name }}"
+        networks:
+          - name: "{{ network_name }}"
         availability_zone: "{{ availability_zone }}"
         auto_ip: false
         timeout: 600
         wait: true
       register: server_disk
       when: boot_disk_name != ""
+
+    - name: Set server variable (disk branch)
+      ansible.builtin.set_fact:
+        server: "{{ server_disk }}"
+      when: boot_disk_name != "" and server_disk.server is defined
 
     # === Boot from image (create new disk) ===
     - name: Get image info
@@ -792,6 +829,18 @@ git commit -m "feat: add network-setup and network-info playbooks"
       ansible.builtin.set_fact:
         actual_disk_size: "{{ [default_disk_size | int, image_info.images[0].min_disk | default(0) | int] | max }}"
       when: boot_image_name != ""
+
+    # Проверяем, что boot volume с таким именем не существует
+    - name: Check if boot volume already exists
+      openstack.cloud.volume_info:
+        name: "{{ vm_name }}-boot"
+      register: existing_boot_volume
+      when: boot_image_name != ""
+
+    - name: Fail if boot volume already exists
+      ansible.builtin.fail:
+        msg: "Boot volume '{{ vm_name }}-boot' already exists. Use different --name or delete existing volume."
+      when: boot_image_name != "" and existing_boot_volume.volumes | length > 0
 
     # Используем block/rescue для отката тома при ошибке создания сервера
     - name: Create volume and server from image
@@ -817,12 +866,17 @@ git commit -m "feat: add network-setup and network-info playbooks"
             key_name: "{{ ssh_key_name }}"
             security_groups:
               - "{{ security_group }}"
-            network: "{{ network_name }}"
+            networks:
+              - name: "{{ network_name }}"
             availability_zone: "{{ availability_zone }}"
             auto_ip: false
             timeout: 600
             wait: true
           register: server_image
+
+        - name: Set server variable (image branch)
+          ansible.builtin.set_fact:
+            server: "{{ server_image }}"
 
       rescue:
         - name: Cleanup volume on server creation failure
@@ -837,10 +891,6 @@ git commit -m "feat: add network-setup and network-info playbooks"
       when: boot_image_name != ""
 
     # === Floating IP ===
-    - name: Set server result
-      ansible.builtin.set_fact:
-        server: "{{ server_disk if server_disk.server is defined else server_image }}"
-
     - name: Allocate floating IP
       openstack.cloud.floating_ip:
         state: present
@@ -935,6 +985,16 @@ git commit -m "feat: add gpu-start playbook"
         msg: "No server named '{{ vm_name }}' found. Nothing to delete."
       when: server_info.servers | length == 0
 
+    - name: Validate exactly one VM found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 VM named '{{ vm_name }}', found {{ server_info.servers | length }}:
+          {% for srv in server_info.servers %}
+          - {{ srv.name }} (ID: {{ srv.id }}, created: {{ srv.created }})
+          {% endfor %}
+          Use server ID directly or ensure unique VM names.
+      when: server_info.servers | length > 1
+
     - name: Release floating IP
       openstack.cloud.floating_ip:
         state: absent
@@ -1001,7 +1061,8 @@ git commit -m "feat: add gpu-stop playbook"
   vars:
     # vm_name может быть переопределён через -e
     flavor_id: "{{ setup_flavor_id }}"
-    base_image: "Ubuntu 24.04 LTS 64-bit"
+    # base_image задаётся интерактивно если не указан
+    base_image: ""
 
   tasks:
     # === Валидация ===
@@ -1010,21 +1071,57 @@ git commit -m "feat: add gpu-stop playbook"
         msg: "SETUP_FLAVOR_ID must be set in .env"
       when: flavor_id == ""
 
+    # === Интерактивный выбор образа если не указан ===
+    - name: Get all public images (when base_image not specified)
+      openstack.cloud.image_info:
+      register: all_images
+      when: base_image == ""
+
+    - name: Display available images and fail (when base_image not specified)
+      ansible.builtin.fail:
+        msg: |
+          base_image is required. Available Ubuntu images:
+          {% for img in all_images.images | selectattr('name', 'search', 'Ubuntu') | sort(attribute='name') %}
+          - {{ img.name }}
+          {% endfor %}
+
+          Set BASE_IMAGE_NAME in .env or pass via -e base_image="<name>"
+      when: base_image == ""
+
     # === Генерация имени VM если не задано ===
     - name: Set default VM name with timestamp
       ansible.builtin.set_fact:
         vm_name: "{{ vm_name | default('setup-vm-' + ansible_date_time.date | replace('-','') + '-' + ansible_date_time.time | replace(':','')) }}"
 
-    # === SSH keypair ===
+    # === SSH keypair с проверкой fingerprint ===
     - name: Read SSH public key
       ansible.builtin.set_fact:
         ssh_public_key: "{{ lookup('file', ssh_key_file | expanduser) }}"
+
+    - name: Calculate local key fingerprint
+      ansible.builtin.shell: |
+        ssh-keygen -l -f {{ ssh_key_file | expanduser }} | awk '{print $2}'
+      register: local_fingerprint
+      changed_when: false
+
+    - name: Get existing keypair info
+      openstack.cloud.keypair_info:
+        name: "{{ ssh_key_name }}"
+      register: existing_keypair
+
+    - name: Fail if keypair exists with different fingerprint
+      ansible.builtin.fail:
+        msg: "Keypair '{{ ssh_key_name }}' exists with different fingerprint."
+      when: >
+        existing_keypair.keypairs | length > 0 and
+        existing_keypair.keypairs[0].fingerprint != local_fingerprint.stdout
 
     - name: Ensure keypair exists
       openstack.cloud.keypair:
         state: present
         name: "{{ ssh_key_name }}"
         public_key: "{{ ssh_public_key }}"
+      when: existing_keypair.keypairs | length == 0
 
     # === Image ===
     - name: Get base image info
@@ -1042,34 +1139,59 @@ git commit -m "feat: add gpu-stop playbook"
       ansible.builtin.set_fact:
         actual_disk_size: "{{ [default_disk_size | int, image_info.images[0].min_disk | default(0) | int] | max }}"
 
-    - name: Create boot volume
-      openstack.cloud.volume:
-        state: present
+    # Проверяем, что boot volume не существует
+    - name: Check if boot volume already exists
+      openstack.cloud.volume_info:
         name: "{{ vm_name }}-boot"
-        size: "{{ actual_disk_size }}"
-        volume_type: "{{ default_disk_type }}"
-        image: "{{ image_info.images[0].id }}"
-        availability_zone: "{{ availability_zone }}"
-        wait: true
-      register: boot_volume
+      register: existing_boot_volume
 
-    # === Server ===
-    - name: Create setup server
-      openstack.cloud.server:
-        state: present
-        name: "{{ vm_name }}"
-        flavor: "{{ flavor_id }}"
-        boot_volume: "{{ boot_volume.volume.id }}"
-        terminate_volume: false
-        key_name: "{{ ssh_key_name }}"
-        security_groups:
-          - "{{ security_group }}"
-        network: "{{ network_name }}"
-        availability_zone: "{{ availability_zone }}"
-        auto_ip: false
-        timeout: 600
-        wait: true
-      register: server
+    - name: Fail if boot volume already exists
+      ansible.builtin.fail:
+        msg: "Boot volume '{{ vm_name }}-boot' already exists. Use different --name or delete existing volume."
+      when: existing_boot_volume.volumes | length > 0
+
+    # Используем block/rescue для отката тома при ошибке
+    - name: Create volume and server
+      block:
+        - name: Create boot volume
+          openstack.cloud.volume:
+            state: present
+            name: "{{ vm_name }}-boot"
+            size: "{{ actual_disk_size }}"
+            volume_type: "{{ default_disk_type }}"
+            image: "{{ image_info.images[0].id }}"
+            availability_zone: "{{ availability_zone }}"
+            wait: true
+          register: boot_volume
+
+        - name: Create setup server
+          openstack.cloud.server:
+            state: present
+            name: "{{ vm_name }}"
+            flavor: "{{ flavor_id }}"
+            boot_volume: "{{ boot_volume.volume.id }}"
+            terminate_volume: false
+            key_name: "{{ ssh_key_name }}"
+            security_groups:
+              - "{{ security_group }}"
+            networks:
+              - name: "{{ network_name }}"
+            availability_zone: "{{ availability_zone }}"
+            auto_ip: false
+            timeout: 600
+            wait: true
+          register: server
+
+      rescue:
+        - name: Cleanup volume on server creation failure
+          openstack.cloud.volume:
+            state: absent
+            name: "{{ vm_name }}-boot"
+          when: boot_volume.volume is defined
+
+        - name: Fail with original error
+          ansible.builtin.fail:
+            msg: "Server creation failed. Volume {{ vm_name }}-boot was cleaned up."
 
     # === Floating IP ===
     - name: Allocate floating IP
@@ -1092,14 +1214,14 @@ git commit -m "feat: add gpu-stop playbook"
           Name: {{ server.server.name }}
           ID: {{ server.server.id }}
           Status: {{ server.server.status }}
-          Floating IP: {{ floating_ip.floating_ip.floating_ip_address | default('not allocated') }}
+          Floating IP: {{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else 'not allocated' }}
 
           Next steps:
           1. Add IP to inventory/hosts.yml
           2. Run: ansible-playbook playbooks/site.yml
           3. Create image: ./selectel.sh image-create-from-disk --disk "{{ vm_name }}-boot" --name "base-image"
 
-          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address | default('<floating_ip>') }}
+          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else '<floating_ip>' }}
           ========================================
 ```
 
@@ -1327,6 +1449,7 @@ git commit -m "feat: add image-create-from-disk playbook"
   vars:
     image_name: ""
     output_dir: ""
+    force: false  # Требовать --force для перезаписи
 
   tasks:
     - name: Validate input
@@ -1363,6 +1486,16 @@ git commit -m "feat: add image-create-from-disk playbook"
     - name: Set output filename
       ansible.builtin.set_fact:
         output_file: "{{ output_dir | expanduser }}/{{ image_name }}.raw"
+
+    - name: Check if output file already exists
+      ansible.builtin.stat:
+        path: "{{ output_file }}"
+      register: existing_file
+
+    - name: Fail if file exists and force is false
+      ansible.builtin.fail:
+        msg: "File '{{ output_file }}' already exists. Use --force to overwrite."
+      when: existing_file.stat.exists and not force | bool
 
     - name: Download image (using openstack CLI)
       ansible.builtin.command:
@@ -1418,6 +1551,7 @@ git commit -m "feat: add image-download playbook"
   vars:
     image_file: ""
     image_name: ""
+    force: false  # Требовать --force для перезаписи
 
   tasks:
     - name: Validate input
@@ -1434,6 +1568,22 @@ git commit -m "feat: add image-download playbook"
       ansible.builtin.fail:
         msg: "File '{{ image_file }}' not found"
       when: not file_stat.stat.exists
+
+    - name: Check if image with same name already exists
+      openstack.cloud.image_info:
+        image: "{{ image_name }}"
+      register: existing_image
+
+    - name: Fail if image exists and force is false
+      ansible.builtin.fail:
+        msg: "Image '{{ image_name }}' already exists. Use --force to overwrite."
+      when: existing_image.images | length > 0 and not force | bool
+
+    - name: Delete existing image if force is true
+      openstack.cloud.image:
+        state: absent
+        name: "{{ image_name }}"
+      when: existing_image.images | length > 0 and force | bool
 
     - name: Determine disk format from extension
       ansible.builtin.set_fact:
@@ -1728,3 +1878,19 @@ git commit -m "chore: final cleanup"
 | ERR-1 (iter2) | Безопасный вывод floating IP при ALLOCATE_FLOATING_IP=false |
 | ERR-3 (iter2) | block/rescue для отката тома при ошибке создания сервера |
 | EDGE-1 (iter2) | Ошибка при указании --disk и --image одновременно |
+
+### Iteration 3
+
+| Замечание | Изменение |
+|-----------|-----------|
+| IMPL-1 (iter3) | set_fact server внутри каждой ветки (disk/image) в gpu-start |
+| IMPL-2 (iter3) | Заменено network: на networks: (список) в gpu-start, setup-start |
+| ERR-1 (iter3) | Валидация уникальности VM в gpu-stop |
+| ERR-2 (iter3) | Проверка status == available для boot disk в gpu-start |
+| ERR-3 (iter3) | block/rescue для отката тома в setup-start |
+| EDGE-1 (iter3) | JSON для extra-vars в selectel.sh (пробелы в именах) |
+| SEC-1 (iter3) | failed_when вместо ignore_errors для SG rules в network-setup |
+| SEC-2 (iter3) | Проверка fingerprint keypair перед созданием |
+| EDGE-2 (iter3) | Проверка существования boot volume перед созданием |
+| ERR-4 (iter3) | --force для перезаписи в image-upload и image-download |
+| DOC-1 (iter3) | Интерактивный выбор образа в setup-start если base_image не задан |

@@ -260,3 +260,14 @@ Ansible-модули `openstack.cloud` автоматически получаю
 | **Откат при ошибке** | При ошибке создания сервера удалять созданный том (block/rescue) |
 | **Взаимоисключающие параметры** | gpu-start с --disk и --image одновременно — ошибка |
 | **Floating IP fallback** | При ALLOCATE_FLOATING_IP=false использовать default в выводе |
+| **set_fact server в ветках** | Выставлять `server` внутри каждой ветки (disk/image) после создания, избегать undefined переменных |
+| **networks: список** | Использовать `networks:` (список) вместо `network:` в openstack.cloud.server |
+| **Валидация уникальности VM** | При удалении VM по имени проверять, что найдена ровно 1 VM |
+| **Проверка статуса тома** | При gpu-start --disk проверять, что том available (не in-use) |
+| **block/rescue в setup-start** | Оборачивать создание тома+сервера в block/rescue для отката |
+| **JSON для extra-vars** | В selectel.sh передавать extra-vars в JSON для поддержки пробелов в именах |
+| **failed_when для SG rules** | Убрать ignore_errors, использовать failed_when для игнорирования только дубликатов |
+| **Проверка fingerprint keypair** | Сравнивать fingerprint существующего keypair с локальным ключом |
+| **Проверка существования тома** | Перед созданием boot-тома проверять, что том с таким именем не существует |
+| **--force для перезаписи** | image-upload и image-download требуют --force для перезаписи существующих ресурсов |
+| **Интерактивный выбор образа** | setup-start показывает список образов, если BASE_IMAGE_NAME не задан |
