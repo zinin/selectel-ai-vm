@@ -34,4 +34,4 @@ echo ""
 
 # Запускаем ansible-playbook с переменными из .env
 ansible-playbook "$SCRIPT_DIR/playbooks/site.yml" \
-    -e "ollama_models=${OLLAMA_MODELS_JSON}"
+    --extra-vars '{"ollama_models": '"${OLLAMA_MODELS_JSON}"'}'
