@@ -1,191 +1,192 @@
-# Selectel AI VM
+# Selectel GPU VM
 
-Ansible playbooks для настройки виртуальных машин с GPU в Selectel.
+Автоматизация управления GPU VM в Selectel через CLI. Экономия за счёт:
+- Прерываемых серверов (spot instances)
+- Хранения образов локально вместо облака
+- Быстрого создания/удаления VM по требованию
+
+## Сценарии использования
+
+| Сценарий | Описание |
+|----------|----------|
+| Быстрый запуск | Образ уже в облаке → запуск VM |
+| Экономный запуск | Загрузка образа с локальной машины → запуск VM |
+| Сохранение работы | Создать образ → скачать локально → удалить ресурсы |
+| Первичная настройка | VM без GPU → настроить через Ansible → создать базовый образ |
 
 ## Требования
 
+- Ubuntu/Debian или macOS
 - Ansible 2.9+
-- SSH доступ к VM по ключу (root)
-- Ubuntu 24.04
+- Python 3.8+
+- SSH ключ для доступа к VM
 
-## Быстрый старт
+## Установка
 
-1. Добавьте IP вашей VM в `inventory/hosts.yml`:
-
-```yaml
-gpu_vms:
-  hosts:
-    gpu-vm-1:
-      ansible_host: 1.2.3.4
-```
-
-2. Запустите playbook:
+1. Установите зависимости:
 
 ```bash
-ansible-playbook playbooks/site.yml
+# Ubuntu/Debian
+sudo apt install python3-openstacksdk python3-openstackclient jq ansible
+
+# macOS
+brew install ansible jq
+pip3 install openstacksdk python-openstackclient
 ```
 
-## Структура
+2. Установите Ansible collection:
 
-```
-├── ansible.cfg          # Конфигурация Ansible
-├── inventory/
-│   └── hosts.yml        # Inventory с хостами
-├── playbooks/
-│   └── site.yml         # Основной playbook
-└── roles/
-    ├── base/            # apt update/upgrade, mc
-    ├── user/            # Создание пользователя
-    ├── ollama/          # Установка Ollama
-    └── claude-code/     # Установка Claude Code
+```bash
+ansible-galaxy collection install openstack.cloud
 ```
 
-## Роли
+3. Настройте credentials:
 
-### base
+```bash
+cp .env.example .env
+# Заполните .env данными из Selectel панели
+```
 
-- Обновление apt кэша
-- Обновление всех пакетов (dist-upgrade)
-- Установка mc
+## Типовые сценарии
 
-### user
+### Первичная настройка (один раз)
 
-Создание пользователя с:
-- UID 1000
-- Группы: sudo, adm, dip, plugdev, video, render
-- sudo без пароля
-- SSH ключи от root
+```bash
+# 1. Создать сеть, роутер, security group
+./selectel.sh network-setup
 
-Параметры (можно переопределить):
-- `username` — имя пользователя (по умолчанию: user)
-- `user_uid` — UID (по умолчанию: 1000)
-- `user_groups` — список групп
+# 2. Запустить VM без GPU для настройки
+./selectel.sh setup-start
 
-### ollama
+# 3. Применить Ansible роли
+./bootstrap.sh
 
-Установка [Ollama](https://ollama.com/) с настройками:
-- `OLLAMA_KEEP_ALIVE=-1` — модели остаются в памяти
-- `OLLAMA_CONTEXT_LENGTH=30000` — увеличенный контекст
+# 4. Остановить VM и отсоединить диск
+./selectel.sh gpu-stop --name "setup-vm-..."
+./selectel.sh disk-detach --name "setup-vm-...-boot"
+```
 
-### claude-code (отключена по умолчанию)
+### Ежедневная работа
 
-Установка [Claude Code](https://claude.ai/code) для пользователя username.
+```bash
+# Запуск GPU VM с существующим диском
+./selectel.sh gpu-start --disk "setup-vm-...-boot"
+
+# ... работа ...
+
+# Остановка (диск сохраняется)
+./selectel.sh gpu-stop --name "gpu-vm-..."
+```
+
+### Работа с образами (для бэкапа или экономии хранения)
+
+```bash
+# Создать образ из диска
+./selectel.sh image-create-from-disk --disk "my-disk" --name "my-image"
+
+# Скачать образ локально
+./selectel.sh image-download --name "my-image" --output ~/images/
+
+# Загрузить образ обратно
+./selectel.sh image-upload --file ~/images/my-image --name "my-image"
+
+# Запустить VM из образа (создаст новый диск)
+./selectel.sh gpu-start --image "my-image"
+```
+
+## CLI команды
+
+### Информация
+
+```bash
+./selectel.sh list-flavors       # Доступные конфигурации VM
+./selectel.sh list-images        # Образы в облаке
+./selectel.sh list-disks         # Диски
+./selectel.sh list-vms           # Запущенные VM
+./selectel.sh network-info       # Конфигурация сети
+```
+
+### Управление VM
+
+```bash
+./selectel.sh gpu-start --disk "name"     # Запуск GPU VM с диском
+./selectel.sh gpu-start --image "name"    # Запуск GPU VM из образа
+./selectel.sh gpu-stop --name "name"      # Остановка VM (диск сохраняется)
+./selectel.sh setup-start                 # Запуск VM без GPU (для настройки)
+```
+
+### Управление дисками
+
+```bash
+./selectel.sh disk-detach --name "name"   # Отсоединить диск от VM
+./selectel.sh disk-delete --name "name"   # Удалить диск
+```
+
+### Управление образами
+
+```bash
+./selectel.sh image-create-from-disk --disk "disk" --name "image"
+./selectel.sh image-download --name "image" --output ~/path/
+./selectel.sh image-upload --file ~/image.raw --name "image"
+./selectel.sh image-delete --name "image"
+```
 
 ## Подключение к Ollama
 
-Ollama слушает только на localhost для безопасности. Для доступа используйте SSH туннель:
+Ollama слушает только на localhost. Для доступа используйте SSH туннель:
 
 ```bash
 ssh -L 11434:localhost:11434 username@<server-ip>
 ```
 
-После этого Ollama доступна локально на `http://localhost:11434`.
+После этого Ollama доступна локально: `http://localhost:11434`
 
-Для постоянного туннеля добавьте в `~/.ssh/config`:
+## Работа с образами локально
 
-```
-Host gpu-vm
-    HostName <server-ip>
-    User username
-    LocalForward 11434 localhost:11434
-```
-
-### Подключение Claude Code к Ollama
+### Конвертация форматов
 
 ```bash
-ollama launch claude --model glm-4.7-flash
+# RAW → VMDK (для VMware/VirtualBox)
+qemu-img convert -p -f raw -O vmdk image.raw image.vmdk
+
+# VMDK → RAW (для загрузки в Selectel)
+qemu-img convert -p -f vmdk -O raw image.vmdk image.raw
 ```
 
-### Подключение OpenCode к Ollama
+### Локальный запуск без GPU
 
-```bash
-ollama launch opencode --model glm-4.7-flash
-```
-
-## Infrastructure Management (Selectel API)
-
-### Prerequisites
-
-1. Install OpenStack SDK and CLI:
-   ```bash
-   sudo apt install python3-openstacksdk python3-openstackclient jq
-   ansible-galaxy collection install openstack.cloud
-   ```
-
-2. Configure credentials:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Selectel credentials
-   ```
-
-### Commands
-
-```bash
-# List resources
-./selectel.sh list-flavors    # Available VM configurations
-./selectel.sh list-images     # Images in cloud
-./selectel.sh list-disks      # Volumes/disks
-./selectel.sh list-vms        # Running servers
-./selectel.sh network-info    # Network configuration
-
-# Network setup (one time)
-./selectel.sh network-setup   # Create network, subnet, router, security group
-
-# VM Management
-./selectel.sh gpu-start --disk "my-disk"                    # Start GPU VM with existing disk
-./selectel.sh gpu-start --disk "my-disk" --name "my-vm"     # With custom VM name
-./selectel.sh gpu-start --image "my-image"                  # Start GPU VM from image (creates new disk)
-./selectel.sh gpu-start --image "my-image" --name "my-vm"   # From image with custom VM name
-./selectel.sh gpu-stop --name "my-vm"                       # Stop specific GPU VM (keeps disk)
-./selectel.sh setup-start                                   # Start VM without GPU
-./selectel.sh setup-start --name "my-setup"                 # With custom VM name
-
-# Disk Management
-./selectel.sh disk-detach --name "my-disk"                      # Detach disk from server (keeps both)
-./selectel.sh disk-delete --name "my-disk"
-
-# Image Management
-./selectel.sh image-create-from-disk --disk "my-disk" --name "my-image"
-./selectel.sh image-download --name "my-image" --output ~/images/
-./selectel.sh image-upload --file ~/image.raw --name "my-image"
-./selectel.sh image-delete --name "my-image"
-```
-
-### Typical Workflows
-
-**Initial Setup (one time):**
-```bash
-./selectel.sh setup-start
-# Wait for VM, add IP to inventory/hosts.yml
-ansible-playbook playbooks/site.yml
-./selectel.sh image-create-from-disk --disk "setup-vm-...-boot" --name "base-image"
-./selectel.sh image-download --name "base-image" --output ~/images/
-./selectel.sh gpu-stop --name "setup-vm-..."
-./selectel.sh disk-delete --name "setup-vm-...-boot"
-```
-
-**Daily Usage:**
-```bash
-./selectel.sh gpu-start --image "base-image"
-# ... work ...
-./selectel.sh gpu-stop --name "gpu-vm-..."
-```
-
-## Локальный запуск образа Selectel
-
-При запуске скачанного образа Selectel локально (без GPU), нужно отключить сервисы nvidia-cdi-refresh, которые пытаются обнаружить отсутствующее оборудование:
+При запуске образа локально отключите nvidia сервисы:
 
 ```bash
 systemctl stop nvidia-cdi-refresh.service
 systemctl stop nvidia-cdi-refresh.path
 ```
 
-## Работа с образами Selectel
+## Архитектура
 
-```bash
-# RAW → VMDK (после скачивания из Selectel)
-qemu-img convert -p -f raw -O vmdk ubuntu2404gpu ubuntu2404gpu.vmdk
+```
+selectel.sh                      # CLI обёртка
+    ↓
+playbooks/infra/*.yml            # Ansible playbooks для Selectel API
+    ↓
+openstack.cloud                  # Ansible collection
+    ↓
+Selectel API (OpenStack)
+```
 
-# VMDK → RAW (для загрузки обратно в Selectel)
-qemu-img convert -p -f vmdk -O raw ubuntu2404gpu.vmdk ubuntu2404gpu
+### Структура проекта
+
+```
+├── selectel.sh          # CLI для управления инфраструктурой
+├── bootstrap.sh         # Применение Ansible ролей к VM
+├── .env.example         # Шаблон credentials
+├── inventory/hosts.yml  # Хосты для Ansible
+├── playbooks/
+│   ├── site.yml         # Настройка VM (роли)
+│   └── infra/           # Управление инфраструктурой
+└── roles/
+    ├── base/            # apt update, mc
+    ├── user/            # Создание пользователя
+    ├── ollama/          # Установка Ollama
+    └── claude_code/     # Установка Claude Code
 ```
