@@ -26,3 +26,7 @@ ssh_key_name: "{{ lookup('env', 'SSH_KEY_NAME') | default('ansible-key', true) }
 
 # Region
 availability_zone: "{{ lookup('env', 'OS_AVAILABILITY_ZONE') | default('ru-7a', true) }}"
+
+# Timeouts
+server_create_timeout: "{{ lookup('env', 'SERVER_CREATE_TIMEOUT') | default(600, true) | int }}"
+server_delete_timeout: "{{ lookup('env', 'SERVER_DELETE_TIMEOUT') | default(300, true) | int }}"

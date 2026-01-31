@@ -16,10 +16,15 @@
 
   tasks:
     # === Валидация входных данных ===
-    - name: Validate boot source
+    - name: Validate boot source is provided
       ansible.builtin.fail:
         msg: "Specify either boot_disk_name or boot_image_name"
       when: boot_disk_name == "" and boot_image_name == ""
+
+    - name: Validate boot source is exclusive
+      ansible.builtin.fail:
+        msg: "Specify either boot_disk_name or boot_image_name, not both"
+      when: boot_disk_name != "" and boot_image_name != ""
 
     - name: Validate GPU_FLAVOR_ID is set
       ansible.builtin.fail:
@@ -31,6 +36,17 @@
       ansible.builtin.set_fact:
         vm_name: "{{ vm_name | default('gpu-vm-' + ansible_date_time.date | replace('-','') + '-' + ansible_date_time.time | replace(':','')) }}"
 
+    # === Проверка уникальности имени VM ===
+    - name: Check if VM with same name already exists
+      openstack.cloud.server_info:
+        server: "{{ vm_name }}"
+      register: existing_vm
+
+    - name: Fail if VM already exists
+      ansible.builtin.fail:
+        msg: "VM '{{ vm_name }}' already exists. Use different --name or delete existing VM."
+      when: existing_vm.servers | length > 0
+
     # === SSH keypair с проверкой fingerprint ===
     - name: Read SSH public key
       ansible.builtin.set_fact:
@@ -38,7 +54,7 @@
 
     - name: Calculate local key fingerprint (MD5 format for OpenStack compatibility)
       ansible.builtin.shell: |
-        ssh-keygen -E md5 -lf {{ ssh_key_file | expanduser }} | awk '{print $2}' | sed 's/^MD5://'
+        ssh-keygen -E md5 -lf {{ ssh_key_file | expanduser | quote }} | awk '{print $2}' | sed 's/^MD5://'
       register: local_fingerprint
       changed_when: false
 
@@ -92,7 +108,7 @@
           - name: "{{ network_name }}"
         availability_zone: "{{ availability_zone }}"
         auto_ip: false
-        timeout: 600
+        timeout: "{{ server_create_timeout }}"
         wait: true
       register: server_disk
       when: boot_disk_name != ""
@@ -159,7 +175,7 @@
               - name: "{{ network_name }}"
             availability_zone: "{{ availability_zone }}"
             auto_ip: false
-            timeout: 600
+            timeout: "{{ server_create_timeout }}"
             wait: true
           register: server_image
 
@@ -168,15 +184,20 @@
             server: "{{ server_image }}"
 
       rescue:
+        - name: Capture original error
+          ansible.builtin.set_fact:
+            original_error: "{{ ansible_failed_result.msg | default('Unknown error') }}"
+
         - name: Cleanup volume on server creation failure
           openstack.cloud.volume:
             state: absent
             name: "{{ vm_name }}-boot"
           when: new_volume.volume is defined
+          ignore_errors: true
 
         - name: Fail with original error
           ansible.builtin.fail:
-            msg: "Server creation failed. Volume {{ vm_name }}-boot was cleaned up."
+            msg: "Server creation failed: {{ original_error }}. Volume {{ vm_name }}-boot was cleaned up."
       when: boot_image_name != ""
 
     # === Floating IP ===

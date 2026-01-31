@@ -61,14 +61,15 @@
         floating_ip_address: "{{ item }}"
       loop: "{{ server_info.servers[0].addresses | dict2items | map(attribute='value') | flatten | selectattr('OS-EXT-IPS:type', 'equalto', 'floating') | map(attribute='addr') | list }}"
       when: server_info.servers | length > 0
-      ignore_errors: true
+      register: floating_ip_result
+      failed_when: floating_ip_result.failed and 'not found' not in (floating_ip_result.msg | default('') | lower)
 
     - name: Delete server (keeps attached volumes)
       openstack.cloud.server:
         state: absent
         name: "{{ vm_name }}"
         wait: true
-        timeout: 300
+        timeout: "{{ server_delete_timeout }}"
       when: server_info.servers | length > 0
 
     - name: Display result
