@@ -1,14 +1,11 @@
 ---
 - name: Check if Claude Code is installed
-  ansible.builtin.command: claude --version
+  ansible.builtin.stat:
+    path: "/home/{{ username }}/.local/bin/claude"
   register: claude_check
-  changed_when: false
-  failed_when: false
-  become: yes
-  become_user: "{{ username }}"
 
 - name: Install Claude Code for {{ username }}
   ansible.builtin.shell: curl -fsSL https://claude.ai/install.sh | bash
   become: yes
   become_user: "{{ username }}"
-  when: claude_check.rc != 0
+  when: not claude_check.stat.exists
