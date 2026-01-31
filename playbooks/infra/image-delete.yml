@@ -1,0 +1,55 @@
+# playbooks/infra/image-delete.yml
+---
+- name: Delete image from cloud
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  vars:
+    image_name: ""
+
+  tasks:
+    - name: Validate input
+      ansible.builtin.fail:
+        msg: "image_name is required"
+      when: image_name == ""
+
+    - name: Get image info
+      openstack.cloud.image_info:
+        image: "{{ image_name }}"
+      register: image_info
+
+    - name: Display warning if not found
+      ansible.builtin.debug:
+        msg: "Image '{{ image_name }}' not found. Nothing to delete."
+      when: image_info.images | length == 0
+
+    - name: Validate exactly one image found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 image named '{{ image_name }}', found {{ image_info.images | length }}:
+          {% for img in image_info.images %}
+          - {{ img.name }} (ID: {{ img.id }})
+          {% endfor %}
+          Use image ID directly or use unique names.
+      when: image_info.images | length > 1
+
+    - name: Delete image
+      openstack.cloud.image:
+        state: absent
+        name: "{{ image_name }}"
+      when: image_info.images | length == 1
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Image Deleted Successfully!
+          ========================================
+          Name: {{ image_name }}
+          ========================================
+      when: image_info.images | length == 1
