@@ -1,0 +1,21 @@
+# playbooks/infra/list-images.yml
+---
+- name: List available images
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Get all images
+      openstack.cloud.image_info:
+      register: images_result
+
+    - name: Display images
+      ansible.builtin.debug:
+        msg: |
+
+          Available Images:
+          =================
+          {% for img in images_result.images | sort(attribute='name') %}
+          {{ "%-50s" | format(img.name) }} | Size: {{ "%10d" | format(img.size | default(0)) }} bytes | Status: {{ img.status }} | ID: {{ img.id }}
+          {% endfor %}
