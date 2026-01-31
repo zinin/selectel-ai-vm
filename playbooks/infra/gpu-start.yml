@@ -215,6 +215,44 @@
       register: floating_ip
       when: allocate_floating_ip | bool
 
+    # === Update inventory ===
+    - name: Update inventory with new VM
+      when: update_inventory | bool and floating_ip is defined and floating_ip.floating_ip is defined
+      block:
+        - name: Read current inventory
+          ansible.builtin.slurp:
+            src: "{{ inventory_file }}"
+          register: current_inventory
+
+        - name: Parse and update inventory
+          ansible.builtin.set_fact:
+            inventory_data: "{{ current_inventory.content | b64decode | from_yaml }}"
+
+        - name: Merge new host into inventory
+          ansible.builtin.set_fact:
+            updated_inventory: >-
+              {{
+                inventory_data | combine({
+                  'all': {
+                    'children': {
+                      'gpu_vms': {
+                        'hosts': (inventory_data.all.children.gpu_vms.hosts | default({})) | combine({
+                          server.server.name: {
+                            'ansible_host': floating_ip.floating_ip.floating_ip_address
+                          }
+                        })
+                      }
+                    }
+                  }
+                }, recursive=true)
+              }}
+
+        - name: Write updated inventory
+          ansible.builtin.copy:
+            content: "{{ updated_inventory | to_nice_yaml(indent=2) }}"
+            dest: "{{ inventory_file }}"
+            mode: '0644'
+
     # === Результат ===
     - name: Display server info
       ansible.builtin.debug:
@@ -227,6 +265,9 @@
           ID: {{ server.server.id }}
           Status: {{ server.server.status }}
           Floating IP: {{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else 'not allocated' }}
+          {% if update_inventory | bool and floating_ip is defined and floating_ip.floating_ip is defined %}
+          Inventory: updated ({{ server.server.name }} -> {{ floating_ip.floating_ip.floating_ip_address }})
+          {% endif %}
 
           Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address
             if floating_ip is defined and floating_ip.floating_ip is defined else '<floating_ip>' }}

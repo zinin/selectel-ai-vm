@@ -5,8 +5,10 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - vars/main.yml
+
   vars:
-    os_region: "{{ lookup('env', 'OS_REGION_NAME') | default('ru-7', true) }}"
     os_project_id: "{{ lookup('env', 'OS_PROJECT_ID') }}"
 
   tasks:

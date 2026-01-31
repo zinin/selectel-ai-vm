@@ -27,9 +27,14 @@ setup_flavor_id: "{{ lookup('env', 'SETUP_FLAVOR_ID') }}"
 ssh_key_file: "{{ lookup('env', 'SSH_KEY_FILE') | default('~/.ssh/id_ed25519.pub', true) }}"
 ssh_key_name: "{{ lookup('env', 'SSH_KEY_NAME') | default('ansible-key', true) }}"
 
-# Region
+# Region (вычисляем из зоны: ru-7a -> ru-7)
 availability_zone: "{{ lookup('env', 'OS_AVAILABILITY_ZONE') | default('ru-7a', true) }}"
+os_region: "{{ availability_zone[:-1] }}"
 
 # Timeouts
 server_create_timeout: "{{ lookup('env', 'SERVER_CREATE_TIMEOUT') | default(600, true) | int }}"
 server_delete_timeout: "{{ lookup('env', 'SERVER_DELETE_TIMEOUT') | default(300, true) | int }}"
+
+# Inventory auto-update
+update_inventory: "{{ lookup('env', 'UPDATE_INVENTORY') | default('true', true) | bool }}"
+inventory_file: "{{ playbook_dir }}/../../inventory/hosts.yml"

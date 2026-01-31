@@ -1,4 +1,4 @@
-target_user: zinin
+target_user: "{{ lookup('env', 'TARGET_USER') | default('zinin', true) }}"
 timezone: Europe/Moscow
 locale: en_US.UTF-8
 ansible_python_interpreter: /usr/bin/python3
