@@ -227,9 +227,6 @@
           ID: {{ server.server.id }}
           Status: {{ server.server.status }}
           Floating IP: {{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else 'not allocated' }}
-          {% if server.server.admin_password is defined and server.server.admin_password %}
-          Root Password: {{ server.server.admin_password }}
-          {% endif %}
 
           Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address
             if floating_ip is defined and floating_ip.floating_ip is defined else '<floating_ip>' }}
