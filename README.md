@@ -90,6 +90,18 @@ Host gpu-vm
     LocalForward 11434 localhost:11434
 ```
 
+### Подключение Claude Code к Ollama
+
+```bash
+ollama launch claude --model glm-4.7-flash
+```
+
+### Подключение OpenCode к Ollama
+
+```bash
+ollama launch opencode --model glm-4.7-flash
+```
+
 ## Локальный запуск образа Selectel
 
 При запуске скачанного образа Selectel локально (без GPU), нужно отключить сервисы nvidia-cdi-refresh, которые пытаются обнаружить отсутствующее оборудование:
@@ -97,4 +109,14 @@ Host gpu-vm
 ```bash
 systemctl stop nvidia-cdi-refresh.service
 systemctl stop nvidia-cdi-refresh.path
+```
+
+## Работа с образами Selectel
+
+```bash
+# RAW → VMDK (после скачивания из Selectel)
+qemu-img convert -p -f raw -O vmdk ubuntu2404gpu ubuntu2404gpu.vmdk
+
+# VMDK → RAW (для загрузки обратно в Selectel)
+qemu-img convert -p -f vmdk -O raw ubuntu2404gpu.vmdk ubuntu2404gpu
 ```
