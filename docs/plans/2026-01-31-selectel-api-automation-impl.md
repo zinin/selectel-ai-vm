@@ -171,6 +171,11 @@ case "$COMMAND" in
                 *) echo "Unknown option: $1"; exit 1 ;;
             esac
         done
+        # Валидация: --disk и --image взаимоисключающие
+        if [[ -n "$DISK_NAME" && -n "$IMAGE_NAME" ]]; then
+            echo "Error: specify either --disk or --image, not both"
+            exit 1
+        fi
         EXTRA_VARS=""
         [[ -n "$VM_NAME" ]] && EXTRA_VARS="$EXTRA_VARS -e vm_name=$VM_NAME"
         if [[ -n "$DISK_NAME" ]]; then
@@ -587,7 +592,7 @@ git commit -m "feat: add list-vms playbook"
           - "{{ network_name }}-subnet"
       register: router
 
-    - name: Create security group
+    - name: Create security group (if not default)
       openstack.cloud.security_group:
         state: present
         name: "{{ security_group }}"
@@ -595,6 +600,7 @@ git commit -m "feat: add list-vms playbook"
       register: sg
       when: security_group != 'default'
 
+    # Добавляем правила всегда — включая default SG
     - name: Add SSH rule to security group
       openstack.cloud.security_group_rule:
         state: present
@@ -603,7 +609,7 @@ git commit -m "feat: add list-vms playbook"
         port_range_min: 22
         port_range_max: 22
         remote_ip_prefix: 0.0.0.0/0
-      when: security_group != 'default'
+      ignore_errors: true  # Правило может уже существовать
 
     - name: Add ICMP rule to security group
       openstack.cloud.security_group_rule:
@@ -611,7 +617,7 @@ git commit -m "feat: add list-vms playbook"
         security_group: "{{ security_group }}"
         protocol: icmp
         remote_ip_prefix: 0.0.0.0/0
-      when: security_group != 'default'
+      ignore_errors: true  # Правило может уже существовать
 
     - name: Display result
       ansible.builtin.debug:
@@ -787,34 +793,47 @@ git commit -m "feat: add network-setup and network-info playbooks"
         actual_disk_size: "{{ [default_disk_size | int, image_info.images[0].min_disk | default(0) | int] | max }}"
       when: boot_image_name != ""
 
-    - name: Create boot volume from image
-      openstack.cloud.volume:
-        state: present
-        name: "{{ vm_name }}-boot"
-        size: "{{ actual_disk_size }}"
-        volume_type: "{{ default_disk_type }}"
-        image: "{{ image_info.images[0].id }}"
-        availability_zone: "{{ availability_zone }}"
-        wait: true
-      register: new_volume
-      when: boot_image_name != ""
+    # Используем block/rescue для отката тома при ошибке создания сервера
+    - name: Create volume and server from image
+      block:
+        - name: Create boot volume from image
+          openstack.cloud.volume:
+            state: present
+            name: "{{ vm_name }}-boot"
+            size: "{{ actual_disk_size }}"
+            volume_type: "{{ default_disk_type }}"
+            image: "{{ image_info.images[0].id }}"
+            availability_zone: "{{ availability_zone }}"
+            wait: true
+          register: new_volume
 
-    - name: Create server from new volume
-      openstack.cloud.server:
-        state: present
-        name: "{{ vm_name }}"
-        flavor: "{{ flavor_id }}"
-        boot_volume: "{{ new_volume.volume.id }}"
-        terminate_volume: false
-        key_name: "{{ ssh_key_name }}"
-        security_groups:
-          - "{{ security_group }}"
-        network: "{{ network_name }}"
-        availability_zone: "{{ availability_zone }}"
-        auto_ip: false
-        timeout: 600
-        wait: true
-      register: server_image
+        - name: Create server from new volume
+          openstack.cloud.server:
+            state: present
+            name: "{{ vm_name }}"
+            flavor: "{{ flavor_id }}"
+            boot_volume: "{{ new_volume.volume.id }}"
+            terminate_volume: false
+            key_name: "{{ ssh_key_name }}"
+            security_groups:
+              - "{{ security_group }}"
+            network: "{{ network_name }}"
+            availability_zone: "{{ availability_zone }}"
+            auto_ip: false
+            timeout: 600
+            wait: true
+          register: server_image
+
+      rescue:
+        - name: Cleanup volume on server creation failure
+          openstack.cloud.volume:
+            state: absent
+            name: "{{ vm_name }}-boot"
+          when: new_volume.volume is defined
+
+        - name: Fail with original error
+          ansible.builtin.fail:
+            msg: "Server creation failed. Volume {{ vm_name }}-boot was cleaned up."
       when: boot_image_name != ""
 
     # === Floating IP ===
@@ -842,9 +861,9 @@ git commit -m "feat: add network-setup and network-info playbooks"
           Name: {{ server.server.name }}
           ID: {{ server.server.id }}
           Status: {{ server.server.status }}
-          Floating IP: {{ floating_ip.floating_ip.floating_ip_address | default('not allocated') }}
+          Floating IP: {{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else 'not allocated' }}
 
-          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address | default('<floating_ip>') }}
+          Connect: ssh root@{{ floating_ip.floating_ip.floating_ip_address if floating_ip is defined and floating_ip.floating_ip is defined else '<floating_ip>' }}
           ========================================
 ```
 
@@ -885,10 +904,26 @@ git commit -m "feat: add gpu-start playbook"
     vm_name: ""
 
   tasks:
-    - name: Validate vm_name is provided
-      ansible.builtin.fail:
-        msg: "vm_name is required. Use --name <vm_name> or set default in vars"
+    # Если vm_name не указан, показать список VM и завершить
+    - name: Get all servers (when no vm_name provided)
+      openstack.cloud.server_info:
+      register: all_servers
       when: vm_name == ""
+
+    - name: Display VM list and exit (when no vm_name provided)
+      ansible.builtin.fail:
+        msg: |
+          vm_name is required. Available VMs:
+          {% for srv in all_servers.servers | sort(attribute='created', reverse=true) %}
+          - {{ srv.name }} (created: {{ srv.created }})
+          {% endfor %}
+          Use: ./selectel.sh gpu-stop --name <vm_name>
+      when: vm_name == "" and all_servers.servers | length > 0
+
+    - name: No VMs found (when no vm_name provided)
+      ansible.builtin.fail:
+        msg: "No VMs found. Nothing to delete."
+      when: vm_name == "" and all_servers.servers | length == 0
 
     - name: Get server info
       openstack.cloud.server_info:
@@ -1116,6 +1151,16 @@ git commit -m "feat: add setup-start playbook"
         msg: "Volume '{{ disk_name }}' not found. Nothing to delete."
       when: volume_info.volumes | length == 0
 
+    - name: Validate exactly one volume found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 volume named '{{ disk_name }}', found {{ volume_info.volumes | length }}:
+          {% for vol in volume_info.volumes %}
+          - {{ vol.name }} (ID: {{ vol.id }}, Size: {{ vol.size }}GB)
+          {% endfor %}
+          Use volume ID directly or use unique names.
+      when: volume_info.volumes | length > 1
+
     - name: Check if volume is attached
       ansible.builtin.fail:
         msg: "Volume '{{ disk_name }}' is attached to a server. Detach or delete the server first."
@@ -1291,13 +1336,23 @@ git commit -m "feat: add image-create-from-disk playbook"
 
     - name: Get image info
       openstack.cloud.image_info:
-        name: "{{ image_name }}"
+        image: "{{ image_name }}"
       register: image_info
 
     - name: Fail if image not found
       ansible.builtin.fail:
         msg: "Image '{{ image_name }}' not found"
       when: image_info.images | length == 0
+
+    - name: Validate exactly one image found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 image named '{{ image_name }}', found {{ image_info.images | length }}:
+          {% for img in image_info.images %}
+          - {{ img.name }} (ID: {{ img.id }})
+          {% endfor %}
+          Use image ID directly or use unique names.
+      when: image_info.images | length > 1
 
     - name: Ensure output directory exists
       ansible.builtin.file:
@@ -1449,7 +1504,7 @@ git commit -m "feat: add image-upload playbook"
 
     - name: Get image info
       openstack.cloud.image_info:
-        name: "{{ image_name }}"
+        image: "{{ image_name }}"
       register: image_info
 
     - name: Display warning if not found
@@ -1457,11 +1512,21 @@ git commit -m "feat: add image-upload playbook"
         msg: "Image '{{ image_name }}' not found. Nothing to delete."
       when: image_info.images | length == 0
 
+    - name: Validate exactly one image found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 image named '{{ image_name }}', found {{ image_info.images | length }}:
+          {% for img in image_info.images %}
+          - {{ img.name }} (ID: {{ img.id }})
+          {% endfor %}
+          Use image ID directly or use unique names.
+      when: image_info.images | length > 1
+
     - name: Delete image
       openstack.cloud.image:
         state: absent
         name: "{{ image_name }}"
-      when: image_info.images | length > 0
+      when: image_info.images | length == 1
 
     - name: Display result
       ansible.builtin.debug:
@@ -1472,7 +1537,7 @@ git commit -m "feat: add image-upload playbook"
           ========================================
           Name: {{ image_name }}
           ========================================
-      when: image_info.images | length > 0
+      when: image_info.images | length == 1
 ```
 
 **Step 2: Проверить синтаксис playbook**
@@ -1651,3 +1716,15 @@ git commit -m "chore: final cleanup"
 | ERR-2 | Ожидание образа по ID |
 | SEC-1 | Конфигурируемый SSH_KEY_NAME |
 | EDGE-2 | Явный EXTERNAL_NETWORK для floating IP |
+
+### Iteration 2
+
+| Замечание | Изменение |
+|-----------|-----------|
+| ERR-2 (iter2) | Валидация уникальности в disk-delete, image-download, image-delete |
+| SEC-1 (iter2) | network-setup добавляет SSH/ICMP правила в любую SG (включая default) |
+| IMPL-1 (iter2) | gpu-stop без --name показывает список VM и просит выбрать |
+| IMPL-2 (iter2) | Исправлен параметр name: → image: в image_info |
+| ERR-1 (iter2) | Безопасный вывод floating IP при ALLOCATE_FLOATING_IP=false |
+| ERR-3 (iter2) | block/rescue для отката тома при ошибке создания сервера |
+| EDGE-1 (iter2) | Ошибка при указании --disk и --image одновременно |
