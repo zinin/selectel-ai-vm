@@ -133,8 +133,9 @@ ollama launch opencode --model glm-4.7-flash
 
 # VM Management
 ./selectel.sh gpu-start --disk "my-disk"                    # Start GPU VM with existing disk
-./selectel.sh gpu-start --image "my-image"                  # Start GPU VM from image
-./selectel.sh gpu-start --image "my-image" --name "my-vm"   # With custom VM name
+./selectel.sh gpu-start --disk "my-disk" --name "my-vm"     # With custom VM name
+./selectel.sh gpu-start --image "my-image"                  # Start GPU VM from image (creates new disk)
+./selectel.sh gpu-start --image "my-image" --name "my-vm"   # From image with custom VM name
 ./selectel.sh gpu-stop --name "my-vm"                       # Stop specific GPU VM (keeps disk)
 ./selectel.sh setup-start                                   # Start VM without GPU
 ./selectel.sh setup-start --name "my-setup"                 # With custom VM name
