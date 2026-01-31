@@ -1,0 +1,15 @@
+---
+base_packages:
+  - mc
+  - curl
+  - unzip
+  - zip
+  - git
+  - gnupg
+  - ca-certificates
+  - bc
+  - jq
+  - shellcheck
+  - 7zip
+  - locales
+  - language-pack-ru

@@ -1,15 +1,40 @@
 ---
 - name: Update apt cache
   ansible.builtin.apt:
-    update_cache: yes
+    update_cache: true
     cache_valid_time: 3600
 
 - name: Upgrade all packages
   ansible.builtin.apt:
     upgrade: dist
-    autoremove: yes
 
-- name: Install mc
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Install base packages
   ansible.builtin.apt:
-    name: mc
+    name: "{{ base_packages }}"
     state: present
+    update_cache: true
+
+- name: Ensure locale is generated
+  community.general.locale_gen:
+    name: "{{ locale }}"
+    state: present
+
+- name: Set default locale
+  ansible.builtin.lineinfile:
+    path: /etc/default/locale
+    regexp: "^LANG="
+    line: "LANG={{ locale }}"
+    create: true
+    mode: "0644"
+
+- name: Set LC_ALL
+  ansible.builtin.lineinfile:
+    path: /etc/default/locale
+    regexp: "^LC_ALL="
+    line: "LC_ALL={{ locale }}"
+    create: true
+    mode: "0644"
