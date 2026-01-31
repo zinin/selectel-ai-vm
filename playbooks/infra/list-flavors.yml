@@ -1,0 +1,21 @@
+# playbooks/infra/list-flavors.yml
+---
+- name: List available compute flavors
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Get all compute flavors
+      openstack.cloud.compute_flavor_info:
+      register: flavors_result
+
+    - name: Display flavors
+      ansible.builtin.debug:
+        msg: |
+
+          Available Compute Flavors:
+          ==========================
+          {% for f in flavors_result.flavors | sort(attribute='vcpus') %}
+          {{ "%-40s" | format(f.name) }} | vCPUs: {{ "%2d" | format(f.vcpus) }} | RAM: {{ "%6d" | format(f.ram) }} MB | Disk: {{ "%4d" | format(f.disk) }} GB | ID: {{ f.id }}
+          {% endfor %}
