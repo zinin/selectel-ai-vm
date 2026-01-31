@@ -1,0 +1,88 @@
+# playbooks/infra/image-create-from-disk.yml
+---
+- name: Create image from disk
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  vars:
+    source_disk_name: ""
+    image_name: ""
+
+  tasks:
+    # === Валидация ===
+    - name: Validate input
+      ansible.builtin.fail:
+        msg: "source_disk_name and image_name are required"
+      when: source_disk_name == "" or image_name == ""
+
+    - name: Check if image with this name already exists
+      openstack.cloud.image_info:
+        image: "{{ image_name }}"
+      register: existing_image
+
+    - name: Fail if image already exists
+      ansible.builtin.fail:
+        msg: "Image '{{ image_name }}' already exists. Choose a different name or delete the existing image."
+      when: existing_image.images | length > 0
+
+    # === Volume info ===
+    - name: Get volume info
+      openstack.cloud.volume_info:
+        name: "{{ source_disk_name }}"
+        details: true
+      register: volume_info
+
+    - name: Validate exactly one volume found
+      ansible.builtin.fail:
+        msg: "Expected exactly 1 volume named '{{ source_disk_name }}', found {{ volume_info.volumes | length }}"
+      when: volume_info.volumes | length != 1
+
+    - name: Check if volume is attached
+      ansible.builtin.fail:
+        msg: "Volume '{{ source_disk_name }}' is attached to a server. Stop the server first."
+      when: volume_info.volumes[0].attachments | length > 0
+
+    # === Create image (CLI required for volume→image) ===
+    - name: Create image from volume
+      ansible.builtin.command:
+        cmd: >
+          openstack image create
+          --volume {{ volume_info.volumes[0].id }}
+          --disk-format raw
+          --container-format bare
+          --format json
+          {{ image_name | quote }}
+      register: image_create_result
+
+    - name: Parse image ID from result
+      ansible.builtin.set_fact:
+        created_image_id: "{{ (image_create_result.stdout | from_json).id }}"
+
+    # === Wait by ID (not by name) ===
+    - name: Wait for image to become active (by ID)
+      openstack.cloud.image_info:
+        image: "{{ created_image_id }}"
+      register: image_info
+      until: image_info.images | length > 0 and image_info.images[0].status == 'active'
+      retries: 60
+      delay: 10
+
+    # === Результат ===
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          Image Created Successfully!
+          ========================================
+          Name: {{ image_name }}
+          ID: {{ created_image_id }}
+          Status: {{ image_info.images[0].status }}
+          Size: {{ image_info.images[0].size | default(0) }} bytes
+
+          Next: ./selectel.sh image-download --name "{{ image_name }}" --output ~/images/
+          ========================================
