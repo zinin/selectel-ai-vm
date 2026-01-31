@@ -17,9 +17,25 @@
           Available Compute Flavors:
           ==========================
           {% for f in flavors_result.flavors | sort(attribute='vcpus') %}
-          {{ "%-40s" | format(f.name) }} | vCPUs: {{ "%2d" | format(f.vcpus) }} | RAM: {{ "%6d" | format(f.ram) }} MB
-            | Disk: {{ "%4d" | format(f.disk) }} GB | ID: {{ f.id }}
+          {% set props = f.extra_specs | default({}) %}
+          {% set deprecated = props.get('deprecated', 'false') | lower == 'true' %}
+          {% if not deprecated %}
+          {% set line = props.get('line', '') %}
+          {% set gpu = props.get('aggregate_instance_extra_specs:gpu', '') %}
+          {{ "%-40s" | format(f.name) }} | {{ "%3d" | format(f.vcpus) }} vCPU | {{ "%6d" | format(f.ram) }} MB | {{ "%4d" | format(f.disk) }} GB | {{ "%-10s" | format(line if line else '-') }}{% if gpu %} | {{ gpu }}{% endif %}
+
+          {% endif %}
           {% endfor %}
-          {% if flavors_result.flavors | length == 0 %}
+          {% set ns = namespace(active=0, deprecated=0) %}
+          {% for f in flavors_result.flavors %}
+          {% set props = f.extra_specs | default({}) %}
+          {% if props.get('deprecated', 'false') | lower == 'true' %}
+          {% set ns.deprecated = ns.deprecated + 1 %}
+          {% else %}
+          {% set ns.active = ns.active + 1 %}
+          {% endif %}
+          {% endfor %}
+          {% if ns.active == 0 %}
           No flavors found.
           {% endif %}
+          Total: {{ ns.active }} flavors ({{ ns.deprecated }} deprecated hidden)
