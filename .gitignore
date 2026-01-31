@@ -2,6 +2,11 @@
 *.retry
 .vault_pass
 
+# Selectel/OpenStack
+.env
+*.raw
+*.qcow2
+
 # Python
 *.pyc
 __pycache__/
