@@ -52,8 +52,7 @@
     - name: Delete existing image if force is true
       openstack.cloud.image:
         state: absent
-        name: "{{ image_name }}"
-      register: delete_result
+        id: "{{ existing_image.images[0].id }}"
       when: existing_image.images | length == 1 and force | bool
 
     - name: Wait for image deletion to complete
@@ -65,9 +64,15 @@
       delay: 5
       when: existing_image.images | length == 1 and force | bool
 
-    - name: Determine disk format from extension
+    - name: Determine disk format from extension (case-insensitive)
       ansible.builtin.set_fact:
-        disk_format: "{{ 'qcow2' if image_file.endswith('.qcow2') else 'raw' }}"
+        disk_format: >-
+          {% set ext = image_file | lower %}
+          {% if ext.endswith('.qcow2') %}qcow2
+          {% elif ext.endswith('.vmdk') %}vmdk
+          {% elif ext.endswith('.vdi') %}vdi
+          {% elif ext.endswith('.vhd') or ext.endswith('.vhdx') %}vpc
+          {% else %}raw{% endif %}
 
     - name: Upload image
       openstack.cloud.image:

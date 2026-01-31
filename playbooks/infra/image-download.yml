@@ -54,9 +54,9 @@
         state: directory
         mode: '0755'
 
-    - name: Set output filename
+    - name: Set output filename (use actual disk format from image metadata)
       ansible.builtin.set_fact:
-        output_file: "{{ output_dir | expanduser }}/{{ image_name }}.raw"
+        output_file: "{{ output_dir | expanduser }}/{{ image_name }}.{{ image_info.images[0].disk_format | default('raw') }}"
 
     - name: Check if output file already exists
       ansible.builtin.stat:
@@ -70,7 +70,7 @@
 
     - name: Download image (using openstack CLI)
       ansible.builtin.command:
-        cmd: "openstack image save --file {{ output_file | quote }} {{ image_info.images[0].id }}"
+        cmd: "openstack image save --file {{ output_file | quote }} {{ image_info.images[0].id | quote }}"
 
     - name: Get file size
       ansible.builtin.stat:

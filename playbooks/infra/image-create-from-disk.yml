@@ -51,11 +51,11 @@
       ansible.builtin.command:
         cmd: >
           openstack image create
-          --volume {{ volume_info.volumes[0].id }}
+          --volume {{ volume_info.volumes[0].id | quote }}
           --disk-format raw
           --container-format bare
           --format json
-          {{ image_name | quote }}
+          -- {{ image_name | quote }}
       register: image_create_result
 
     - name: Parse image ID from result
