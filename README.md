@@ -102,6 +102,73 @@ ollama launch claude --model glm-4.7-flash
 ollama launch opencode --model glm-4.7-flash
 ```
 
+## Infrastructure Management (Selectel API)
+
+### Prerequisites
+
+1. Install OpenStack SDK and CLI:
+   ```bash
+   sudo apt install python3-openstacksdk python3-openstackclient jq
+   ansible-galaxy collection install openstack.cloud
+   ```
+
+2. Configure credentials:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Selectel credentials
+   ```
+
+### Commands
+
+```bash
+# List resources
+./selectel.sh list-flavors    # Available VM configurations
+./selectel.sh list-images     # Images in cloud
+./selectel.sh list-disks      # Volumes/disks
+./selectel.sh list-vms        # Running servers
+./selectel.sh network-info    # Network configuration
+
+# Network setup (one time)
+./selectel.sh network-setup   # Create network, subnet, router, security group
+
+# VM Management
+./selectel.sh gpu-start --disk "my-disk"                    # Start GPU VM with existing disk
+./selectel.sh gpu-start --image "my-image"                  # Start GPU VM from image
+./selectel.sh gpu-start --image "my-image" --name "my-vm"   # With custom VM name
+./selectel.sh gpu-stop --name "my-vm"                       # Stop specific GPU VM (keeps disk)
+./selectel.sh setup-start                                   # Start VM without GPU
+./selectel.sh setup-start --name "my-setup"                 # With custom VM name
+
+# Disk Management
+./selectel.sh disk-delete --name "my-disk"
+
+# Image Management
+./selectel.sh image-create-from-disk --disk "my-disk" --name "my-image"
+./selectel.sh image-download --name "my-image" --output ~/images/
+./selectel.sh image-upload --file ~/image.raw --name "my-image"
+./selectel.sh image-delete --name "my-image"
+```
+
+### Typical Workflows
+
+**Initial Setup (one time):**
+```bash
+./selectel.sh setup-start
+# Wait for VM, add IP to inventory/hosts.yml
+ansible-playbook playbooks/site.yml
+./selectel.sh image-create-from-disk --disk "setup-vm-...-boot" --name "base-image"
+./selectel.sh image-download --name "base-image" --output ~/images/
+./selectel.sh gpu-stop --name "setup-vm-..."
+./selectel.sh disk-delete --name "setup-vm-...-boot"
+```
+
+**Daily Usage:**
+```bash
+./selectel.sh gpu-start --image "base-image"
+# ... work ...
+./selectel.sh gpu-stop --name "gpu-vm-..."
+```
+
 ## Локальный запуск образа Selectel
 
 При запуске скачанного образа Selectel локально (без GPU), нужно отключить сервисы nvidia-cdi-refresh, которые пытаются обнаружить отсутствующее оборудование:
