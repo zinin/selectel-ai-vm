@@ -35,7 +35,9 @@ ansible-playbook playbooks/site.yml
 │   └── site.yml         # Основной playbook
 └── roles/
     ├── base/            # apt update/upgrade, mc
-    └── user/            # Создание пользователя
+    ├── user/            # Создание пользователя
+    ├── ollama/          # Установка Ollama
+    └── claude-code/     # Установка Claude Code
 ```
 
 ## Роли
@@ -58,6 +60,35 @@ ansible-playbook playbooks/site.yml
 - `username` — имя пользователя (по умолчанию: zinin)
 - `user_uid` — UID (по умолчанию: 1000)
 - `user_groups` — список групп
+
+### ollama
+
+Установка [Ollama](https://ollama.com/) с настройками:
+- `OLLAMA_KEEP_ALIVE=-1` — модели остаются в памяти
+- `OLLAMA_CONTEXT_LENGTH=30000` — увеличенный контекст
+
+### claude-code
+
+Установка [Claude Code](https://claude.ai/code) для пользователя zinin.
+
+## Подключение к Ollama
+
+Ollama слушает только на localhost для безопасности. Для доступа используйте SSH туннель:
+
+```bash
+ssh -L 11434:localhost:11434 zinin@<server-ip>
+```
+
+После этого Ollama доступна локально на `http://localhost:11434`.
+
+Для постоянного туннеля добавьте в `~/.ssh/config`:
+
+```
+Host gpu-vm
+    HostName <server-ip>
+    User zinin
+    LocalForward 11434 localhost:11434
+```
 
 ## Локальный запуск образа Selectel
 
