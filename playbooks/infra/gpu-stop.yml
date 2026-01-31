@@ -1,0 +1,85 @@
+# playbooks/infra/gpu-stop.yml
+---
+- name: Stop and delete GPU VM (keeps disk)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+
+  vars:
+    # vm_name передаётся через -e или используется default
+    vm_name: ""
+
+  tasks:
+    # Если vm_name не указан, показать список VM и завершить
+    - name: Get all servers (when no vm_name provided)
+      openstack.cloud.server_info:
+      register: all_servers
+      when: vm_name == ""
+
+    - name: Display VM list and exit (when no vm_name provided)
+      ansible.builtin.fail:
+        msg: |
+          vm_name is required. Available VMs:
+          {% for srv in all_servers.servers | sort(attribute='created', reverse=true) %}
+          - {{ srv.name }} (created: {{ srv.created }})
+          {% endfor %}
+          Use: ./selectel.sh gpu-stop --name <vm_name>
+      when: vm_name == "" and all_servers.servers | length > 0
+
+    - name: No VMs found (when no vm_name provided)
+      ansible.builtin.fail:
+        msg: "No VMs found. Nothing to delete."
+      when: vm_name == "" and all_servers.servers | length == 0
+
+    - name: Get server info
+      openstack.cloud.server_info:
+        server: "{{ vm_name }}"
+      register: server_info
+
+    - name: Display warning if no server found
+      ansible.builtin.debug:
+        msg: "No server named '{{ vm_name }}' found. Nothing to delete."
+      when: server_info.servers | length == 0
+
+    - name: Validate exactly one VM found
+      ansible.builtin.fail:
+        msg: |
+          Expected exactly 1 VM named '{{ vm_name }}', found {{ server_info.servers | length }}:
+          {% for srv in server_info.servers %}
+          - {{ srv.name }} (ID: {{ srv.id }}, created: {{ srv.created }})
+          {% endfor %}
+          Use server ID directly or ensure unique VM names.
+      when: server_info.servers | length > 1
+
+    - name: Release floating IP
+      openstack.cloud.floating_ip:
+        state: absent
+        server: "{{ server_info.servers[0].id }}"
+        floating_ip_address: "{{ item }}"
+      loop: "{{ server_info.servers[0].addresses | dict2items | map(attribute='value') | flatten | selectattr('OS-EXT-IPS:type', 'equalto', 'floating') | map(attribute='addr') | list }}"
+      when: server_info.servers | length > 0
+      ignore_errors: true
+
+    - name: Delete server (keeps attached volumes)
+      openstack.cloud.server:
+        state: absent
+        name: "{{ vm_name }}"
+        wait: true
+        timeout: 300
+      when: server_info.servers | length > 0
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: |
+
+          ========================================
+          GPU VM Deleted Successfully!
+          ========================================
+          Name: {{ vm_name }}
+          Note: Boot disk is preserved (terminate_volume: false).
+                Use 'disk-delete --name <disk>' to remove it.
+          ========================================
+      when: server_info.servers | length > 0
